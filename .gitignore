@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
+# Firebase
+.firebase/
+firebase-debug.log
+
+# Environment & secrets
+.env
+.env.*
+*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.sw?
+
+# Claude local settings
+.claude/
+
+# Business documents (invoices, receipts — not source code)
+*.pdf
+*.xlsx
+*.docx
+signature.png
+
+# Test/utility scripts
+test-pdf.js
+test-read.cjs
+fix-cors.cjs
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Planning docs (keep OTD_Business_Hub_Plan.md via git add -f if needed)
+OTD_Business_Hub_Technical_Review.docx

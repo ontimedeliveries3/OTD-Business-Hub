@@ -1,0 +1,77 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: check if user is in the allowed list
+    function isAllowed() {
+      return request.auth != null &&
+        request.auth.token.email in [
+          'ontimedeliveries3@gmail.com',
+          'mohitsingh87@gmail.com'
+        ];
+    }
+
+    // Helper: check if user is super admin
+    function isSuperAdmin() {
+      return request.auth != null &&
+        request.auth.token.email == 'mohitsingh87@gmail.com';
+    }
+
+    // Config documents (company_info, counters)
+    // TEMP: allow all authorized users to write for initial seed
+    match /config/{doc} {
+      allow read: if isAllowed();
+      allow write: if isAllowed();
+    }
+
+    // Clients collection
+    match /clients/{clientId} {
+      allow read: if isAllowed();
+      allow write: if isAllowed();
+    }
+
+    // Invoices collection
+    match /invoices/{invoiceId} {
+      allow read: if isAllowed();
+      allow create: if isAllowed();
+      allow update: if isAllowed();
+      allow delete: if isSuperAdmin();
+    }
+
+    // MIS Imports collection
+    match /mis_imports/{importId} {
+      allow read: if isAllowed();
+      allow create: if isAllowed();
+      allow update: if isAllowed();
+      allow delete: if isAllowed();
+    }
+
+    // Trips collection (trip logger)
+    match /trips/{tripId} {
+      allow read: if isAllowed();
+      allow create: if isAllowed();
+      allow update: if isAllowed();
+      allow delete: if isAllowed();
+    }
+
+    // Vehicles collection (vehicle number → size mapping)
+    match /vehicles/{vehicleId} {
+      allow read: if isAllowed();
+      allow write: if isAllowed();
+    }
+
+    // Locations collection (client-specific origin/destination pool)
+    match /locations/{locationId} {
+      allow read: if isAllowed();
+      allow write: if isAllowed();
+    }
+
+    // MIS Trips collection
+    match /mis_trips/{tripId} {
+      allow read: if isAllowed();
+      allow create: if isAllowed();
+      allow delete: if isAllowed();
+    }
+  }
+}

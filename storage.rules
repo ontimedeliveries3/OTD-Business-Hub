@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAllowed() {
+      return request.auth != null &&
+        request.auth.token.email in [
+          'ontimedeliveries3@gmail.com',
+          'mohitsingh87@gmail.com'
+        ];
+    }
+
+    // Invoice PDFs
+    match /invoices/{fileName} {
+      allow read: if isAllowed();
+      allow write: if isAllowed();
+    }
+
+    // Signature image
+    match /assets/{fileName} {
+      allow read: if isAllowed();
+      allow write: if isAllowed();
+    }
+  }
+}

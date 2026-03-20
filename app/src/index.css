@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/* Spinner animation */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Slide-down animation for offline banner */
+@keyframes slideDown {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out;
+}
+
+/* Toast fade-in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
