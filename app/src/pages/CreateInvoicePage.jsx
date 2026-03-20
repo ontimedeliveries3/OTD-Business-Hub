@@ -49,13 +49,15 @@ export default function CreateInvoicePage() {
   const [uploadingSig, setUploadingSig] = useState(false)
   const [error, setError] = useState(null)
   const [loadingDraft, setLoadingDraft] = useState(false)
+  const [currentFY, setCurrentFY] = useState(null)
 
   // Load clients, company info, and signature
   useEffect(() => {
     async function load() {
-      const [clientsSnap, companySnap] = await Promise.all([
+      const [clientsSnap, companySnap, countersSnap] = await Promise.all([
         getDocs(collection(db, 'clients')),
         getDoc(doc(db, 'config', 'company_info')),
+        getDoc(doc(db, 'config', 'counters')),
       ])
       const clientList = []
       clientsSnap.forEach((d) => clientList.push({ id: d.id, ...d.data() }))
@@ -64,6 +66,9 @@ export default function CreateInvoicePage() {
         const info = companySnap.data()
         setCompanyInfo(info)
         if (info.signature_url) setSignatureUrl(info.signature_url)
+      }
+      if (countersSnap.exists()) {
+        setCurrentFY(countersSnap.data().current_fy || '25-26')
       }
     }
     load()
@@ -202,7 +207,7 @@ export default function CreateInvoicePage() {
     tax_rate: taxRate,
     igst_amount: igstAmount,
     grand_total: grandTotal,
-    fiscal_year: '25-26',
+    fiscal_year: currentFY || '25-26',
     status,
     updated_at: serverTimestamp(),
     updated_by: user.email,

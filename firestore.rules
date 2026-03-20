@@ -18,17 +18,24 @@ service cloud.firestore {
         request.auth.token.email == 'mohitsingh87@gmail.com';
     }
 
-    // Config documents (company_info, counters)
-    // TEMP: allow all authorized users to write for initial seed
-    match /config/{doc} {
+    // Config: company_info is admin-only, counters writable by all (for invoice numbering)
+    match /config/company_info {
+      allow read: if isAllowed();
+      allow write: if isSuperAdmin();
+    }
+    match /config/counters {
       allow read: if isAllowed();
       allow write: if isAllowed();
+    }
+    match /config/{doc} {
+      allow read: if isAllowed();
+      allow write: if isSuperAdmin();
     }
 
     // Clients collection
     match /clients/{clientId} {
       allow read: if isAllowed();
-      allow write: if isAllowed();
+      allow write: if isSuperAdmin();
     }
 
     // Invoices collection
@@ -58,13 +65,13 @@ service cloud.firestore {
     // Vehicles collection (vehicle number → size mapping)
     match /vehicles/{vehicleId} {
       allow read: if isAllowed();
-      allow write: if isAllowed();
+      allow write: if isSuperAdmin();
     }
 
     // Locations collection (client-specific origin/destination pool)
     match /locations/{locationId} {
       allow read: if isAllowed();
-      allow write: if isAllowed();
+      allow write: if isSuperAdmin();
     }
 
     // MIS Trips collection

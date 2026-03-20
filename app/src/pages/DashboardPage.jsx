@@ -2,13 +2,12 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { seedDatabase } from '../lib/seed'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function DashboardPage() {
   const { user, logout, isSuperAdmin } = useAuth()
   const navigate = useNavigate()
-  const [stats, setStats] = useState({ totalInvoices: 0, totalRevenue: 0, lastInvoice: '—' })
+  const [stats, setStats] = useState({ totalInvoices: 0, totalRevenue: 0, lastInvoice: '—', fiscalYear: '—' })
   const [recentInvoices, setRecentInvoices] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -16,16 +15,14 @@ export default function DashboardPage() {
   useEffect(() => {
     async function init() {
       try {
-        // Seed database if needed (runs silently, skips if no permission)
-        await seedDatabase()
-
         // Fetch counters for last invoice number
         const countersSnap = await getDoc(doc(db, 'config', 'counters'))
         const counters = countersSnap.data()
+        const fy = counters?.current_fy || '25-26'
 
         // Fetch invoices for this FY
         const invoicesRef = collection(db, 'invoices')
-        const q = query(invoicesRef, where('fiscal_year', '==', counters?.current_fy || '25-26'), orderBy('created_at', 'desc'))
+        const q = query(invoicesRef, where('fiscal_year', '==', fy), orderBy('created_at', 'desc'))
         const snapshot = await getDocs(q)
 
         let totalRevenue = 0
@@ -49,6 +46,7 @@ export default function DashboardPage() {
           totalInvoices: snapshot.size,
           totalRevenue,
           lastInvoice,
+          fiscalYear: fy,
         })
         setRecentInvoices(recent)
         setError(null)
@@ -114,7 +112,7 @@ export default function DashboardPage() {
             {/* Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sm:p-6">
-                <p className="text-sm text-gray-500">Invoices (FY 25-26)</p>
+                <p className="text-sm text-gray-500">Invoices (FY {stats.fiscalYear})</p>
                 <p className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{stats.totalInvoices}</p>
               </div>
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sm:p-6">
