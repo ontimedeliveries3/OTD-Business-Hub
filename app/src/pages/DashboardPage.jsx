@@ -128,6 +128,42 @@ export default function DashboardPage() {
             {/* Quick Actions */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               <button
+                onClick={() => navigate('/bids')}
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">&#127919;</span>
+                  <div>
+                    <p className="font-medium text-gray-900 group-hover:text-blue-600">Bid Tracker</p>
+                    <p className="text-sm text-gray-500">Log & track bids</p>
+                  </div>
+                </div>
+              </button>
+              <button
+                onClick={() => navigate('/trips')}
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">&#128666;</span>
+                  <div>
+                    <p className="font-medium text-gray-900 group-hover:text-blue-600">Trip Logger</p>
+                    <p className="text-sm text-gray-500">Log & view trips</p>
+                  </div>
+                </div>
+              </button>
+              <button
+                onClick={() => navigate('/mis')}
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📊</span>
+                  <div>
+                    <p className="font-medium text-gray-900 group-hover:text-blue-600">MIS Dashboard</p>
+                    <p className="text-sm text-gray-500">Import & view trip data</p>
+                  </div>
+                </div>
+              </button>
+              <button
                 onClick={() => navigate('/invoice/new')}
                 className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
               >
@@ -148,42 +184,6 @@ export default function DashboardPage() {
                   <div>
                     <p className="font-medium text-gray-900 group-hover:text-blue-600">Invoice Register</p>
                     <p className="text-sm text-gray-500">View all invoices</p>
-                  </div>
-                </div>
-              </button>
-              <button
-                onClick={() => navigate('/mis')}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">📊</span>
-                  <div>
-                    <p className="font-medium text-gray-900 group-hover:text-blue-600">MIS Dashboard</p>
-                    <p className="text-sm text-gray-500">Import & view trip data</p>
-                  </div>
-                </div>
-              </button>
-              <button
-                onClick={() => navigate('/trips')}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">&#128666;</span>
-                  <div>
-                    <p className="font-medium text-gray-900 group-hover:text-blue-600">Trip Logger</p>
-                    <p className="text-sm text-gray-500">Log & view trips</p>
-                  </div>
-                </div>
-              </button>
-              <button
-                onClick={() => navigate('/bids')}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">&#127919;</span>
-                  <div>
-                    <p className="font-medium text-gray-900 group-hover:text-blue-600">Bid Tracker</p>
-                    <p className="text-sm text-gray-500">Log & track bids</p>
                   </div>
                 </div>
               </button>
