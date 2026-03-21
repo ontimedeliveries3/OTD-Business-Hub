@@ -62,7 +62,7 @@ export default function BidForm({
       requestId: form.requestId.trim().toUpperCase(),
       client: 'Shadowfax',
       origin: form.origin,
-      destination: form.origin, // usually same as origin for round trips
+      destination: form.destination || form.origin,
       touchPoints: touchPointsArray,
       vehicleSize: form.vehicleSize,
       tat: form.tat ? parseInt(form.tat, 10) : null,
@@ -111,7 +111,7 @@ export default function BidForm({
           />
         </div>
 
-        {/* Row 2: Origin + Vehicle Size */}
+        {/* Row 2: Origin + Destination */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Origin</label>
@@ -126,6 +126,23 @@ export default function BidForm({
               ))}
             </select>
           </div>
+          <div>
+            <label className={labelClass}>Destination</label>
+            <select
+              value={form.destination}
+              onChange={(e) => updateField('destination', e.target.value)}
+              className={fieldClass('destination')}
+            >
+              <option value="">Select destination...</option>
+              {ORIGINS.map(o => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Row 3: Vehicle Size */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Vehicle Size</label>
             <select

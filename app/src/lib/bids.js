@@ -79,8 +79,9 @@ function normalizeVehicleSize(raw) {
 function parsePrice(raw) {
   if (typeof raw === 'number') return raw
   if (!raw) return 0
-  const cleaned = String(raw).replace(/[^\d.]/g, '')
-  return parseFloat(cleaned) || 0
+  // Extract only digits (no decimals expected in prices like "Rs. 6300/-")
+  const cleaned = String(raw).replace(/[^\d]/g, '')
+  return parseInt(cleaned, 10) || 0
 }
 
 // ── Parse Shadowfax allocation Excel ─────────────────────────────────────────

@@ -221,6 +221,28 @@ export default function BidsPage() {
     }
   }
 
+  // ── Clear all bids ─────────────────────────────────────────────────────
+
+  const [clearingAll, setClearingAll] = useState(false)
+  const [clearAllConfirm, setClearAllConfirm] = useState(false)
+
+  const handleClearAll = async () => {
+    setClearingAll(true)
+    try {
+      const batch = writeBatch(db)
+      bids.forEach(b => batch.delete(doc(db, 'bids', b.id)))
+      await batch.commit()
+      setBids([])
+      setClearAllConfirm(false)
+      showToast(`Cleared ${bids.length} bids.`)
+    } catch (err) {
+      console.error('Failed to clear bids:', err)
+      setError('Failed to clear: ' + err.message)
+    } finally {
+      setClearingAll(false)
+    }
+  }
+
   // ── Import Excel ───────────────────────────────────────────────────────
 
   const handleImport = async (e) => {
@@ -341,6 +363,35 @@ export default function BidsPage() {
                 className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm disabled:opacity-50"
               >
                 {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear All Confirmation */}
+      {clearAllConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm mx-4 w-full">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Clear All Bids</h3>
+            <p className="text-sm text-gray-600 mb-1">
+              Delete all <span className="font-medium">{bids.length}</span> bids?
+            </p>
+            <p className="text-xs text-red-500 mb-4">This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setClearAllConfirm(false)}
+                disabled={clearingAll}
+                className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearAll}
+                disabled={clearingAll}
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm disabled:opacity-50"
+              >
+                {clearingAll ? 'Clearing...' : 'Clear All'}
               </button>
             </div>
           </div>
@@ -504,6 +555,14 @@ export default function BidsPage() {
                 >
                   {importing ? 'Importing...' : 'Import Allocation History'}
                 </button>
+                {bids.length > 0 && (
+                  <button
+                    onClick={() => setClearAllConfirm(true)}
+                    className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Clear All ({bids.length})
+                  </button>
+                )}
               </div>
             </div>
 
@@ -529,6 +588,7 @@ export default function BidsPage() {
                         <th className="px-4 py-3 font-medium">Date</th>
                         <th className="px-4 py-3 font-medium">Request ID</th>
                         <th className="px-4 py-3 font-medium hidden sm:table-cell">Origin</th>
+                        <th className="px-4 py-3 font-medium hidden sm:table-cell">Destination</th>
                         <th className="px-4 py-3 font-medium hidden lg:table-cell">Touch Points</th>
                         <th className="px-4 py-3 font-medium hidden sm:table-cell">Vehicle</th>
                         <th className="px-4 py-3 font-medium">Status</th>
@@ -544,6 +604,7 @@ export default function BidsPage() {
                             <span className="text-xs">{b.requestId || '\u2014'}</span>
                           </td>
                           <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{b.origin || '\u2014'}</td>
+                          <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{b.destination || '\u2014'}</td>
                           <td className="px-4 py-3 text-gray-500 hidden lg:table-cell">
                             {Array.isArray(b.touchPoints)
                               ? b.touchPoints.slice(0, 2).join(', ') + (b.touchPoints.length > 2 ? ` +${b.touchPoints.length - 2}` : '')
