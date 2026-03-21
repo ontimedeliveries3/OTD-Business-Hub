@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
@@ -41,6 +41,19 @@ const DEFAULT_LOCATIONS = [
 export default function TripsPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Pre-fill from bid (when navigating from Bid Tracker with "Create trip")
+  const bidPrefill = useMemo(() => {
+    if (searchParams.get('from_bid') !== '1') return null
+    return {
+      client_id: 'shadowfax',
+      origin: searchParams.get('origin') || '',
+      destination: searchParams.get('destination') || '',
+      vehicle_size: searchParams.get('vehicle_size') || '',
+      amount: searchParams.get('amount') || '',
+    }
+  }, [searchParams])
 
   // Data
   const [trips, setTrips] = useState([])
@@ -373,9 +386,25 @@ export default function TripsPage() {
             clients={clients}
             vehicles={vehicles}
             locations={locations}
-            onSave={handleSingleSave}
+            onSave={(data) => {
+              handleSingleSave(data)
+              // Clear bid prefill params after saving
+              if (bidPrefill) setSearchParams({}, { replace: true })
+            }}
             autoResetOnSave
             suggestions={suggestions}
+            initialValues={bidPrefill ? {
+              date: new Date().toISOString().split('T')[0],
+              vehicle_no: '',
+              vehicle_size: bidPrefill.vehicle_size,
+              driver_name: '',
+              origin: bidPrefill.origin,
+              destination: bidPrefill.destination,
+              client_id: bidPrefill.client_id,
+              trip_type: 'regular',
+              amount: bidPrefill.amount,
+              remarks: '',
+            } : undefined}
           />
         )}
 

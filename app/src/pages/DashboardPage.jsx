@@ -175,6 +175,18 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </button>
+              <button
+                onClick={() => navigate('/bids')}
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">&#127919;</span>
+                  <div>
+                    <p className="font-medium text-gray-900 group-hover:text-blue-600">Bid Tracker</p>
+                    <p className="text-sm text-gray-500">Log & track bids</p>
+                  </div>
+                </div>
+              </button>
             </div>
 
             {/* Recent Invoices */}

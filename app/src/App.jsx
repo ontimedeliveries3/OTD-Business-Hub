@@ -7,6 +7,7 @@ import CreateInvoicePage from './pages/CreateInvoicePage'
 import InvoiceRegisterPage from './pages/InvoiceRegisterPage'
 import MISPage from './pages/MISPage'
 import TripsPage from './pages/TripsPage'
+import BidsPage from './pages/BidsPage'
 import OfflineBanner from './components/OfflineBanner'
 import LoadingSpinner from './components/LoadingSpinner'
 
@@ -75,6 +76,14 @@ function App() {
           element={
             <ProtectedRoute>
               <TripsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/bids"
+          element={
+            <ProtectedRoute>
+              <BidsPage />
             </ProtectedRoute>
           }
         />

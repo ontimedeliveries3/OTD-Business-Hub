@@ -79,5 +79,13 @@ service cloud.firestore {
       allow create: if isAllowed();
       allow delete: if isAllowed();
     }
+
+    // Bids collection (bid tracker)
+    match /bids/{bidId} {
+      allow read: if isAllowed();
+      allow create: if isAllowed();
+      allow update: if isAllowed();
+      allow delete: if isAllowed();
+    }
   }
 }
