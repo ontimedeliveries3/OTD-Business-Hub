@@ -21,7 +21,7 @@ export default function LoginPage() {
       <div className="max-w-sm w-full text-center">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">OTD Business Hub</h1>
-          <p className="mt-2 text-gray-500">On Time Deliveries</p>
+          <p className="mt-2 text-gray-500">OnTime Deliveries</p>
         </div>
 
         {error && (

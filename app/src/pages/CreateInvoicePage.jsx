@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { collection, doc, getDoc, getDocs, setDoc, addDoc, runTransaction, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
@@ -50,6 +50,7 @@ export default function CreateInvoicePage() {
   const [error, setError] = useState(null)
   const [loadingDraft, setLoadingDraft] = useState(false)
   const [currentFY, setCurrentFY] = useState(null)
+  const [invoiceNumber, setInvoiceNumber] = useState('')
 
   // Load clients, company info, and signature
   useEffect(() => {
@@ -83,6 +84,7 @@ export default function CreateInvoicePage() {
       if (snap.exists()) {
         const data = snap.data()
         setSelectedClientId(data.client_id || '')
+        setInvoiceNumber(data.invoice_number || '')
         setInvoiceDate(data.invoice_date || todayISO())
         setBillingMonth(data.billing_month ?? currentMonthYear().month)
         setBillingYear(data.billing_year ?? currentMonthYear().year)
@@ -254,26 +256,17 @@ export default function CreateInvoicePage() {
       setError('Please add at least one line item.')
       return
     }
+    if (!invoiceNumber.trim()) {
+      setError('Please enter an invoice number.')
+      return
+    }
     setGenerating(true)
     setError(null)
     try {
-      // 1. Allocate invoice number via Firestore transaction
-      const countersRef = doc(db, 'config', 'counters')
-      const { invoiceNumber, seq } = await runTransaction(db, async (transaction) => {
-        const countersSnap = await transaction.get(countersRef)
-        const counters = countersSnap.data()
-        const newSeq = (counters.last_seq || 57) + 1
-        const fy = counters.current_fy || '25-26'
-        const invNum = `RS/${String(newSeq).padStart(3, '0')}/${fy}`
-        transaction.update(countersRef, { last_seq: newSeq })
-        return { invoiceNumber: invNum, seq: newSeq }
-      })
-
-      // 2. Build full invoice data
+      // Build full invoice data with manually entered number
       const data = {
         ...buildInvoiceData('generated'),
-        invoice_number: invoiceNumber,
-        seq,
+        invoice_number: invoiceNumber.trim(),
       }
 
       // 3. Generate PDF (with signature URL — CORS enabled on Storage bucket)
@@ -341,14 +334,15 @@ export default function CreateInvoicePage() {
         )}
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 space-y-6">
-          {/* Invoice Number (read-only) */}
+          {/* Invoice Number (manual entry) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number</label>
             <input
               type="text"
-              value="Auto-assigned on generation"
-              disabled
-              className="w-full px-3 py-2.5 bg-gray-100 border border-gray-300 rounded-lg text-gray-500 text-sm"
+              value={invoiceNumber}
+              onChange={(e) => setInvoiceNumber(e.target.value)}
+              placeholder="e.g. RS/060/25-26"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
