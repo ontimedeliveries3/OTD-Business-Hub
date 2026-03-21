@@ -208,8 +208,8 @@ const s = StyleSheet.create({
   signatureSection: {
     width: 190,
     borderLeft: '0.5pt solid #000',
-    paddingHorizontal: 6,
-    paddingVertical: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
     justifyContent: 'space-between',
     alignItems: 'center',
   },
@@ -225,8 +225,8 @@ const s = StyleSheet.create({
     fontSize: 8,
   },
   sigImage: {
-    width: 100,
-    height: 50,
+    width: 182,
+    height: 100,
     objectFit: 'contain',
   },
 })
@@ -436,10 +436,7 @@ function Footer({ company, signatureUrl }) {
         ) : (
           <View style={{ height: 50 }} />
         )}
-        <View style={s.sigFooter}>
-          <Text style={{ fontSize: 8, marginBottom: 2 }}>Proprietor</Text>
-          <Text style={s.sigName}>ONTIME DELIVERIES</Text>
-        </View>
+        <View style={s.sigFooter} />
       </View>
     </View>
   )
