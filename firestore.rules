@@ -7,15 +7,14 @@ service cloud.firestore {
     function isAllowed() {
       return request.auth != null &&
         request.auth.token.email in [
-          'ontimedeliveries3@gmail.com',
-          'mohitsingh87@gmail.com'
+          'ontimedeliveries3@gmail.com'
         ];
     }
 
     // Helper: check if user is super admin
     function isSuperAdmin() {
       return request.auth != null &&
-        request.auth.token.email == 'mohitsingh87@gmail.com';
+        request.auth.token.email == 'ontimedeliveries3@gmail.com';
     }
 
     // Config: company_info is admin-only, counters writable by all (for invoice numbering)

@@ -5,10 +5,9 @@ import { AuthContext } from './auth-context'
 
 const ALLOWED_EMAILS = [
   'ontimedeliveries3@gmail.com',
-  'mohitsingh87@gmail.com',
 ]
 
-const SUPER_ADMIN_EMAIL = 'mohitsingh87@gmail.com'
+const SUPER_ADMIN_EMAIL = 'ontimedeliveries3@gmail.com'
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
