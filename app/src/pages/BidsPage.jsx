@@ -163,14 +163,13 @@ export default function BidsPage() {
       setBids(prev => [newBid, ...prev])
 
       if (bidData.status === 'won') {
-        const tp = bidData.touchPoints?.[0] || ''
         showToast('Bid saved! Won ' + formatCurrency(bidData.allocationPrice), {
           label: 'Create trip \u2192',
           onClick: () => {
             const params = new URLSearchParams({
               from_bid: '1',
               origin: bidData.origin,
-              destination: tp,
+              destination: bidData.destination || bidData.touchPoints?.[0] || '',
               vehicle_size: bidData.vehicleSize,
               amount: String(bidData.allocationPrice || ''),
             })
@@ -623,6 +622,26 @@ export default function BidsPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1">
+                              {b.status === 'won' && (
+                                <button
+                                  onClick={() => {
+                                    const params = new URLSearchParams({
+                                      from_bid: '1',
+                                      origin: b.origin || '',
+                                      destination: b.destination || b.touchPoints?.[0] || '',
+                                      vehicle_size: b.vehicleSize || '',
+                                      amount: String(b.allocationPrice || ''),
+                                    })
+                                    navigate('/trips?' + params.toString())
+                                  }}
+                                  className="text-green-500 hover:text-green-700 transition-colors p-1"
+                                  title="Create trip"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                                  </svg>
+                                </button>
+                              )}
                               <button
                                 onClick={() => setEditingBid(b)}
                                 className="text-gray-400 hover:text-blue-600 transition-colors p-1"
