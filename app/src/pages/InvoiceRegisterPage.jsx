@@ -9,12 +9,14 @@ import * as XLSX from 'xlsx'
 const FISCAL_YEARS = ['24-25', '25-26', '26-27']
 
 export default function InvoiceRegisterPage() {
-  const { user, logout, isSuperAdmin } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(null) // invoice id being deleted
   const [deleteConfirm, setDeleteConfirm] = useState(null) // invoice to confirm delete
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('')
@@ -138,6 +140,33 @@ export default function InvoiceRegisterPage() {
     }
   }
 
+  // Bulk delete all filtered invoices
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true)
+    try {
+      for (const inv of filteredInvoices) {
+        if (inv.pdf_url && inv.invoice_number) {
+          try {
+            const pdfFileName = `${inv.invoice_number.replace(/\//g, '_')}.pdf`
+            const pdfRef = ref(storage, `invoices/${pdfFileName}`)
+            await deleteObject(pdfRef)
+          } catch (storageErr) {
+            console.warn('Could not delete PDF:', storageErr.message)
+          }
+        }
+        await deleteDoc(doc(db, 'invoices', inv.id))
+      }
+      const deletedIds = new Set(filteredInvoices.map((i) => i.id))
+      setInvoices((prev) => prev.filter((i) => !deletedIds.has(i.id)))
+      setBulkDeleteConfirm(false)
+    } catch (err) {
+      console.error('Bulk delete failed:', err)
+      alert('Bulk delete failed: ' + err.message)
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   // Export to Excel
   const handleExport = () => {
     const data = filteredInvoices.map((inv) => ({
@@ -233,6 +262,35 @@ export default function InvoiceRegisterPage() {
           </div>
         )}
 
+        {/* Bulk Delete Confirmation Modal */}
+        {bulkDeleteConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm mx-4 w-full">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete All Filtered Invoices</h3>
+              <p className="text-sm text-gray-600 mb-1">
+                This will delete <span className="font-medium text-red-600">{filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}</span> and their PDFs.
+              </p>
+              <p className="text-xs text-red-500 mb-4">This action cannot be undone.</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setBulkDeleteConfirm(false)}
+                  disabled={bulkDeleting}
+                  className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm disabled:opacity-50"
+                >
+                  {bulkDeleting ? 'Deleting...' : `Delete ${filteredInvoices.length}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -290,13 +348,22 @@ export default function InvoiceRegisterPage() {
             {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}
             {fyFilter !== 'all' && ` in FY ${fyFilter}`}
           </p>
-          <button
-            onClick={handleExport}
-            disabled={filteredInvoices.length === 0}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Export to Excel
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setBulkDeleteConfirm(true)}
+              disabled={filteredInvoices.length === 0}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Delete All ({filteredInvoices.length})
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={filteredInvoices.length === 0}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Export to Excel
+            </button>
+          </div>
         </div>
 
         {/* Invoice Table */}
@@ -320,7 +387,7 @@ export default function InvoiceRegisterPage() {
                     <th className="px-4 py-3 font-medium text-right">GST</th>
                     <th className="px-4 py-3 font-medium text-right">Grand Total</th>
                     <th className="px-4 py-3 font-medium">Status</th>
-                    {isSuperAdmin && <th className="px-4 py-3 font-medium w-10"></th>}
+                    <th className="px-4 py-3 font-medium w-10"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -360,8 +427,7 @@ export default function InvoiceRegisterPage() {
                           {inv.status || 'unknown'}
                         </span>
                       </td>
-                      {isSuperAdmin && (
-                        <td className="px-4 py-3">
+                      <td className="px-4 py-3">
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
@@ -375,7 +441,6 @@ export default function InvoiceRegisterPage() {
                             </svg>
                           </button>
                         </td>
-                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -395,7 +460,7 @@ export default function InvoiceRegisterPage() {
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       {formatCurrency(filteredTotals.grandTotal)}
                     </td>
-                    <td className="px-4 py-3" colSpan={isSuperAdmin ? 2 : 1}></td>
+                    <td className="px-4 py-3" colSpan={2}></td>
                   </tr>
                 </tfoot>
               </table>
