@@ -26,4 +26,13 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  // Exempt pdfGenerator from react-refresh rule — it defines React-PDF
+  // components alongside the exported generator function, which is not
+  // a browser-rendered UI module.
+  {
+    files: ['**/lib/pdfGenerator.jsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

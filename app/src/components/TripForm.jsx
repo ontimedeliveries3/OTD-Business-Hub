@@ -1,21 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
-
-const todayISO = () => new Date().toISOString().split('T')[0]
-
-const emptyTrip = () => ({
-  date: todayISO(),
-  vehicle_no: '',
-  vehicle_size: '',
-  driver_name: '',
-  origin: '',
-  destination: '',
-  client_id: '',
-  trip_type: 'regular',
-  amount: '',
-  remarks: '',
-})
-
-export { emptyTrip }
+import { useState, useMemo } from 'react'
+import { emptyTrip } from '../lib/trips'
 
 export default function TripForm({
   clients = [],
@@ -33,15 +17,7 @@ export default function TripForm({
 }) {
   const [form, setForm] = useState(initialValues || emptyTrip())
   const [errors, setErrors] = useState({})
-  const [showRemarks, setShowRemarks] = useState(false)
-
-  // Sync with initialValues when they change (edit mode)
-  useEffect(() => {
-    if (initialValues) {
-      setForm(initialValues)
-      if (initialValues.remarks) setShowRemarks(true)
-    }
-  }, [initialValues])
+  const [showRemarks, setShowRemarks] = useState(!!(initialValues?.remarks))
 
   // Derive unique vehicle sizes from vehicles list
   const vehicleSizes = useMemo(() => {

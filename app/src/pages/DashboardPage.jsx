@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth'
 
 export default function DashboardPage() {
-  const { user, logout, isSuperAdmin } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [stats, setStats] = useState({ totalInvoices: 0, totalRevenue: 0, lastInvoice: '—', fiscalYear: '—' })
   const [recentInvoices, setRecentInvoices] = useState([])

@@ -2,9 +2,41 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth'
 import TripForm from '../components/TripForm'
 import TripEditModal from '../components/TripEditModal'
+
+// Default vehicles to seed if collection is empty
+const DEFAULT_VEHICLES = [
+  { number: 'BR11GF3128', size: 'Tata 407' },
+  { number: 'BR11GF7560', size: 'Tata 407' },
+  { number: 'JH05DR0249', size: 'Tata 407' },
+  { number: 'JH05DT1651', size: 'Bolero' },
+  { number: 'JH05DV0634', size: 'Bolero' },
+  { number: 'BR11GF4665', size: 'Bolero' },
+  { number: 'BR02GD1367', size: '8 FT' },
+]
+
+// Default locations per client (shared pool for origin & destination)
+const DEFAULT_LOCATIONS = [
+  // Shadowfax
+  { name: 'Patna DC', client_id: 'shadowfax' },
+  { name: 'Ranchi DC', client_id: 'shadowfax' },
+  { name: 'Purnia DC', client_id: 'shadowfax' },
+  { name: 'Jamshedpur DC', client_id: 'shadowfax' },
+  { name: 'Monifit DC', client_id: 'shadowfax' },
+  { name: 'SimrahiBazar DC', client_id: 'shadowfax' },
+  { name: 'Madhepura DC', client_id: 'shadowfax' },
+  { name: 'Pawakhali DC', client_id: 'shadowfax' },
+  { name: 'Bhawanipur DC', client_id: 'shadowfax' },
+  { name: 'Bahadurganj DC', client_id: 'shadowfax' },
+  // Meesho
+  { name: 'PTS (Patna Sort Center)', client_id: 'meesho' },
+  { name: 'Ranchi SC (RNS)', client_id: 'meesho' },
+  { name: 'Janakpur Lane', client_id: 'meesho' },
+  { name: 'Bero Lane', client_id: 'meesho' },
+  { name: 'Chhattisgarh Lane', client_id: 'meesho' },
+]
 
 export default function TripsPage() {
   const { user, logout } = useAuth()
@@ -18,38 +50,6 @@ export default function TripsPage() {
   const [error, setError] = useState(null)
 
   const [locations, setLocations] = useState([])
-
-  // Default vehicles to seed if collection is empty
-  const DEFAULT_VEHICLES = [
-    { number: 'BR11GF3128', size: 'Tata 407' },
-    { number: 'BR11GF7560', size: 'Tata 407' },
-    { number: 'JH05DR0249', size: 'Tata 407' },
-    { number: 'JH05DT1651', size: 'Bolero' },
-    { number: 'JH05DV0634', size: 'Bolero' },
-    { number: 'BR11GF4665', size: 'Bolero' },
-    { number: 'BR02GD1367', size: '8 FT' },
-  ]
-
-  // Default locations per client (shared pool for origin & destination)
-  const DEFAULT_LOCATIONS = [
-    // Shadowfax
-    { name: 'Patna DC', client_id: 'shadowfax' },
-    { name: 'Ranchi DC', client_id: 'shadowfax' },
-    { name: 'Purnia DC', client_id: 'shadowfax' },
-    { name: 'Jamshedpur DC', client_id: 'shadowfax' },
-    { name: 'Monifit DC', client_id: 'shadowfax' },
-    { name: 'SimrahiBazar DC', client_id: 'shadowfax' },
-    { name: 'Madhepura DC', client_id: 'shadowfax' },
-    { name: 'Pawakhali DC', client_id: 'shadowfax' },
-    { name: 'Bhawanipur DC', client_id: 'shadowfax' },
-    { name: 'Bahadurganj DC', client_id: 'shadowfax' },
-    // Meesho
-    { name: 'PTS (Patna Sort Center)', client_id: 'meesho' },
-    { name: 'Ranchi SC (RNS)', client_id: 'meesho' },
-    { name: 'Janakpur Lane', client_id: 'meesho' },
-    { name: 'Bero Lane', client_id: 'meesho' },
-    { name: 'Chhattisgarh Lane', client_id: 'meesho' },
-  ]
 
   // Tabs
   const [activeTab, setActiveTab] = useState('log')
@@ -72,66 +72,67 @@ export default function TripsPage() {
 
   // ── Load data ──────────────────────────────────────────────────────────
 
-  const loadData = async () => {
-    try {
-      setError(null)
-      const [tripsSnap, clientsSnap, vehiclesSnap, locationsSnap] = await Promise.all([
-        getDocs(collection(db, 'trips')),
-        getDocs(collection(db, 'clients')),
-        getDocs(collection(db, 'vehicles')),
-        getDocs(collection(db, 'locations')),
-      ])
+  useEffect(() => {
+    async function loadData() {
+      try {
+        setError(null)
+        const [tripsSnap, clientsSnap, vehiclesSnap, locationsSnap] = await Promise.all([
+          getDocs(collection(db, 'trips')),
+          getDocs(collection(db, 'clients')),
+          getDocs(collection(db, 'vehicles')),
+          getDocs(collection(db, 'locations')),
+        ])
 
-      const tripsList = []
-      tripsSnap.forEach(d => tripsList.push({ id: d.id, ...d.data() }))
-      tripsList.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+        const tripsList = []
+        tripsSnap.forEach(d => tripsList.push({ id: d.id, ...d.data() }))
+        tripsList.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
 
-      const clientsList = []
-      clientsSnap.forEach(d => clientsList.push({ id: d.id, ...d.data() }))
+        const clientsList = []
+        clientsSnap.forEach(d => clientsList.push({ id: d.id, ...d.data() }))
 
-      let vehiclesList = []
-      vehiclesSnap.forEach(d => vehiclesList.push({ id: d.id, ...d.data() }))
+        let vehiclesList = []
+        vehiclesSnap.forEach(d => vehiclesList.push({ id: d.id, ...d.data() }))
 
-      // Seed any missing default vehicles
-      const existingIds = new Set(vehiclesList.map(v => v.id))
-      const missing = DEFAULT_VEHICLES.filter(v => !existingIds.has(v.number))
-      if (missing.length > 0) {
-        for (const v of missing) {
-          await setDoc(doc(db, 'vehicles', v.number), { number: v.number, size: v.size, active: true })
-          vehiclesList.push({ id: v.number, number: v.number, size: v.size, active: true })
+        // Seed any missing default vehicles
+        const existingIds = new Set(vehiclesList.map(v => v.id))
+        const missing = DEFAULT_VEHICLES.filter(v => !existingIds.has(v.number))
+        if (missing.length > 0) {
+          for (const v of missing) {
+            await setDoc(doc(db, 'vehicles', v.number), { number: v.number, size: v.size, active: true })
+            vehiclesList.push({ id: v.number, number: v.number, size: v.size, active: true })
+          }
         }
-      }
 
-      let locationsList = []
-      locationsSnap.forEach(d => locationsList.push({ id: d.id, ...d.data() }))
+        let locationsList = []
+        locationsSnap.forEach(d => locationsList.push({ id: d.id, ...d.data() }))
 
-      // Seed any missing default locations
-      const existingLocIds = new Set(locationsList.map(l => l.id))
-      const missingLocs = DEFAULT_LOCATIONS.filter(l => {
-        const locId = `${l.client_id}_${l.name.replace(/[^a-zA-Z0-9]/g, '_')}`
-        return !existingLocIds.has(locId)
-      })
-      if (missingLocs.length > 0) {
-        for (const l of missingLocs) {
+        // Seed any missing default locations
+        const existingLocIds = new Set(locationsList.map(l => l.id))
+        const missingLocs = DEFAULT_LOCATIONS.filter(l => {
           const locId = `${l.client_id}_${l.name.replace(/[^a-zA-Z0-9]/g, '_')}`
-          await setDoc(doc(db, 'locations', locId), { name: l.name, client_id: l.client_id, active: true })
-          locationsList.push({ id: locId, name: l.name, client_id: l.client_id, active: true })
+          return !existingLocIds.has(locId)
+        })
+        if (missingLocs.length > 0) {
+          for (const l of missingLocs) {
+            const locId = `${l.client_id}_${l.name.replace(/[^a-zA-Z0-9]/g, '_')}`
+            await setDoc(doc(db, 'locations', locId), { name: l.name, client_id: l.client_id, active: true })
+            locationsList.push({ id: locId, name: l.name, client_id: l.client_id, active: true })
+          }
         }
+
+        setTrips(tripsList)
+        setClients(clientsList)
+        setVehicles(vehiclesList.filter(v => v.active !== false))
+        setLocations(locationsList.filter(l => l.active !== false))
+      } catch (err) {
+        console.error('Failed to load trips:', err)
+        setError('Failed to load data: ' + err.message)
+      } finally {
+        setLoading(false)
       }
-
-      setTrips(tripsList)
-      setClients(clientsList)
-      setVehicles(vehiclesList.filter(v => v.active !== false))
-      setLocations(locationsList.filter(l => l.active !== false))
-    } catch (err) {
-      console.error('Failed to load trips:', err)
-      setError('Failed to load data: ' + err.message)
-    } finally {
-      setLoading(false)
     }
-  }
-
-  useEffect(() => { loadData() }, [])
+    loadData()
+  }, [])
 
   // ── Suggestions from existing trips (recent-first, deduplicated) ──────
 
@@ -228,8 +229,6 @@ export default function TripsPage() {
       setTrips(prev => prev.map(t => t.id === tripId ? { ...t, ...tripData } : t))
       setEditingTrip(null)
       showToast('Trip updated!')
-    } catch (err) {
-      throw err
     } finally {
       setEditSaving(false)
     }

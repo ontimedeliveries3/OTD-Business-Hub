@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { collection, getDocs, doc, deleteDoc } from 'firebase/firestore'
 import { ref, deleteObject } from 'firebase/storage'
 import { db, storage } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth'
 import * as XLSX from 'xlsx'
 
 const FISCAL_YEARS = ['24-25', '25-26', '26-27']

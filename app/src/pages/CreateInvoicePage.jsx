@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, setDoc, addDoc, runTransaction, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth'
 import { generateInvoicePDF } from '../lib/pdfGenerator.jsx'
 import LoadingSpinner from '../components/LoadingSpinner'
 

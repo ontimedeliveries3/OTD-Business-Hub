@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { collection, doc, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { parseSfxExcel } from '../lib/sfxMisParser'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
