@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, serverTimestamp, query, where } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
@@ -263,6 +263,18 @@ export default function CreateInvoicePage() {
     setGenerating(true)
     setError(null)
     try {
+      // Check for duplicate invoice number
+      const dupQuery = query(collection(db, 'invoices'), where('invoice_number', '==', invoiceNumber.trim()))
+      const dupSnap = await getDocs(dupQuery)
+      const isDuplicate = editId
+        ? dupSnap.docs.some((d) => d.id !== editId)
+        : !dupSnap.empty
+      if (isDuplicate) {
+        setError(`Invoice number "${invoiceNumber.trim()}" already exists. Please use a different number.`)
+        setGenerating(false)
+        return
+      }
+
       // Build full invoice data with manually entered number
       const data = {
         ...buildInvoiceData('generated'),
