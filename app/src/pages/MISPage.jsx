@@ -68,7 +68,12 @@ export default function MISPage() {
   const [success, setSuccess] = useState(null)
 
   // ── UI state ──
-  const [activeTab, setActiveTab] = useState('import') // import | reconciliation | disputes
+  const [activeTab, setActiveTab] = useState('import') // import | reconciliation | disputes | regular_trips
+
+  // Regular Trips (lane contracts)
+  const [regularTrips, setRegularTrips] = useState([])
+  const [editingRegular, setEditingRegular] = useState(null) // null = list, 'new' = add, doc = edit
+  const [regularForm, setRegularForm] = useState({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', startDate: '', status: 'active' })
   const [selectedMonth, setSelectedMonth] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
 
   // Import state
@@ -95,11 +100,12 @@ export default function MISPage() {
   const loadData = useCallback(async () => {
     try {
       setError(null)
-      const [misImportsSnap, misTripsSnap, otdTripsSnap, bidsSnap] = await Promise.all([
+      const [misImportsSnap, misTripsSnap, otdTripsSnap, bidsSnap, regularTripsSnap] = await Promise.all([
         getDocs(collection(db, 'mis_imports')),
         getDocs(collection(db, 'mis_trips')),
         getDocs(collection(db, 'trips')),
         getDocs(collection(db, 'bids')),
+        getDocs(collection(db, 'regular_trips')),
       ])
 
       const importsList = []
@@ -121,10 +127,14 @@ export default function MISPage() {
       const bidsList = []
       bidsSnap.forEach(d => bidsList.push({ id: d.id, ...d.data() }))
 
+      const regularList = []
+      regularTripsSnap.forEach(d => regularList.push({ id: d.id, ...d.data() }))
+
       setMisImports(importsList)
       setMisTrips(tripsList)
       setOtdTrips(otdList)
       setBids(bidsList)
+      setRegularTrips(regularList)
     } catch (err) {
       console.error('Failed to load MIS data:', err)
       setError('Failed to load data: ' + err.message)
@@ -494,6 +504,68 @@ export default function MISPage() {
   // RENDER
   // ══════════════════════════════════════════════════════════════════════
 
+  // ══════════════════════════════════════════════════════════════════════
+  // REGULAR TRIPS CRUD
+  const VEHICLE_TYPES = ['Bolero', 'Tata Ace', 'Tata 407', '8 ft', '10 ft', '14 ft', '17 ft', '32 ft']
+
+  const resetRegularForm = () => {
+    setRegularForm({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', startDate: '', status: 'active' })
+    setEditingRegular(null)
+  }
+
+  const handleSaveRegular = async () => {
+    if (!regularForm.lane || !regularForm.vehicleNo) {
+      setError('Lane name and vehicle number are required.')
+      return
+    }
+    try {
+      const data = {
+        lane: regularForm.lane.trim(),
+        vehicleNo: regularForm.vehicleNo.trim().toUpperCase().replace(/\s+/g, ''),
+        vehicleType: regularForm.vehicleType,
+        cpkRate: parseFloat(regularForm.cpkRate) || 0,
+        allottedKms: parseFloat(regularForm.allottedKms) || 0,
+        startDate: regularForm.startDate || null,
+        status: regularForm.status,
+        client: 'Shadowfax',
+        updatedAt: serverTimestamp(),
+      }
+      if (editingRegular && editingRegular !== 'new') {
+        await updateDoc(doc(db, 'regular_trips', editingRegular.id), data)
+      } else {
+        data.createdAt = serverTimestamp()
+        await addDoc(collection(db, 'regular_trips'), data)
+      }
+      resetRegularForm()
+      await loadData()
+      setSuccess('Regular trip saved.')
+    } catch (err) {
+      setError('Failed to save: ' + err.message)
+    }
+  }
+
+  const handleDeleteRegular = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'regular_trips', id))
+      await loadData()
+    } catch (err) {
+      setError('Failed to delete: ' + err.message)
+    }
+  }
+
+  const handleEditRegular = (rt) => {
+    setEditingRegular(rt)
+    setRegularForm({
+      lane: rt.lane || '',
+      vehicleNo: rt.vehicleNo || '',
+      vehicleType: rt.vehicleType || 'Bolero',
+      cpkRate: rt.cpkRate || '',
+      allottedKms: rt.allottedKms || '',
+      startDate: rt.startDate || '',
+      status: rt.status || 'active',
+    })
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-3">
@@ -566,6 +638,7 @@ export default function MISPage() {
             { key: 'import', label: 'Import' },
             { key: 'reconciliation', label: 'Reconciliation' },
             { key: 'disputes', label: `Disputes (${disputeTrips.length})` },
+            { key: 'regular_trips', label: `Regular Trips (${regularTrips.length})` },
           ].map(tab => (
             <button
               key={tab.key}
@@ -1030,6 +1103,169 @@ export default function MISPage() {
                       )}
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {/* ════════════════════════════════════════════════════════════════ */}
+        {/* REGULAR TRIPS TAB */}
+        {/* ════════════════════════════════════════════════════════════════ */}
+        {activeTab === 'regular_trips' && (
+          <div className="space-y-6">
+            {/* Add/Edit form */}
+            {editingRegular !== null ? (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">
+                  {editingRegular === 'new' ? 'Add Regular Trip' : 'Edit Regular Trip'}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Lane Name</label>
+                    <input
+                      type="text"
+                      value={regularForm.lane}
+                      onChange={e => setRegularForm(f => ({ ...f, lane: e.target.value }))}
+                      placeholder="e.g. Patna DC-Sonho DC"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number</label>
+                    <input
+                      type="text"
+                      value={regularForm.vehicleNo}
+                      onChange={e => setRegularForm(f => ({ ...f, vehicleNo: e.target.value }))}
+                      placeholder="e.g. BR11GF7516"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
+                    <select
+                      value={regularForm.vehicleType}
+                      onChange={e => setRegularForm(f => ({ ...f, vehicleType: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    >
+                      {VEHICLE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">CPK Rate (₹/km)</label>
+                    <input
+                      type="number"
+                      value={regularForm.cpkRate}
+                      onChange={e => setRegularForm(f => ({ ...f, cpkRate: e.target.value }))}
+                      placeholder="0"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Allotted KMs</label>
+                    <input
+                      type="number"
+                      value={regularForm.allottedKms}
+                      onChange={e => setRegularForm(f => ({ ...f, allottedKms: e.target.value }))}
+                      placeholder="0"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={regularForm.startDate}
+                      onChange={e => setRegularForm(f => ({ ...f, startDate: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <select
+                      value={regularForm.status}
+                      onChange={e => setRegularForm(f => ({ ...f, status: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={handleSaveRegular}
+                    className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={resetRegularForm}
+                    className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setEditingRegular('new')}
+                className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm"
+              >
+                + Add Regular Trip
+              </button>
+            )}
+
+            {/* List */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              {regularTrips.length === 0 ? (
+                <div className="px-6 py-8 text-center text-gray-500 text-sm">
+                  No regular trips configured. Add your standing CPK lane contracts here.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-left">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Lane</th>
+                        <th className="px-4 py-3 font-medium">Vehicle</th>
+                        <th className="px-4 py-3 font-medium">Type</th>
+                        <th className="px-4 py-3 font-medium text-right">CPK Rate</th>
+                        <th className="px-4 py-3 font-medium text-right">Allotted KMs</th>
+                        <th className="px-4 py-3 font-medium">Start Date</th>
+                        <th className="px-4 py-3 font-medium">Status</th>
+                        <th className="px-4 py-3 font-medium w-20">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {regularTrips.map(rt => (
+                        <tr key={rt.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-medium text-gray-900">{rt.lane}</td>
+                          <td className="px-4 py-3 text-gray-500">{rt.vehicleNo}</td>
+                          <td className="px-4 py-3 text-gray-500">{rt.vehicleType}</td>
+                          <td className="px-4 py-3 text-right text-gray-900">{rt.cpkRate ? `₹${rt.cpkRate}` : '—'}</td>
+                          <td className="px-4 py-3 text-right text-gray-900">{rt.allottedKms || '—'}</td>
+                          <td className="px-4 py-3 text-gray-500">{formatDate(rt.startDate)}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                              rt.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                            }`}>{rt.status}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleEditRegular(rt)}
+                                className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                              >Edit</button>
+                              <button
+                                onClick={() => handleDeleteRegular(rt.id)}
+                                className="text-red-500 hover:text-red-700 text-xs font-medium"
+                              >Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

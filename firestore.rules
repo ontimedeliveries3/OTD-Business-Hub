@@ -88,5 +88,13 @@ service cloud.firestore {
       allow update: if isAllowed();
       allow delete: if isAllowed();
     }
+
+    // Regular Trips collection (CPK lane contracts)
+    match /regular_trips/{tripId} {
+      allow read: if isAllowed();
+      allow create: if isAllowed();
+      allow update: if isAllowed();
+      allow delete: if isAllowed();
+    }
   }
 }
