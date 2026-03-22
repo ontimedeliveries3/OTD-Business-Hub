@@ -1,272 +1,475 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, getDocs, doc, deleteDoc, updateDoc, query, where, writeBatch } from 'firebase/firestore'
+import { collection, getDocs, doc, deleteDoc, addDoc, updateDoc, query, where, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
-import MISUploadModal from '../components/MISUploadModal'
+import { parseTripDetailsExcel } from '../lib/sfxTripDetailsParser'
+import { parseCreditNoteExcel } from '../lib/sfxCreditNoteParser'
+import { reconcile, mergeCreditNoteData } from '../lib/misReconciler'
 
-const BATCH_SIZE = 499
+const BATCH_SIZE = 450
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
+const formatCurrency = (amount) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0)
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return '—'
+  if (dateStr?.toDate) {
+    const d = dateStr.toDate()
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+  }
+  const str = String(dateStr)
+  const parts = str.split('-')
+  if (parts.length === 3 && parts[0].length === 4) return `${parts[2]}/${parts[1]}/${parts[0]}`
+  return str
+}
+
+// ── Status badge ────────────────────────────────────────────────────────
+function MatchBadge({ status }) {
+  const map = {
+    matched: { bg: 'bg-green-100 text-green-800', label: 'Matched' },
+    amount_mismatch: { bg: 'bg-amber-100 text-amber-800', label: 'Amt Mismatch' },
+    unmatched: { bg: 'bg-red-100 text-red-800', label: 'Missing in OTD' },
+    disputed: { bg: 'bg-purple-100 text-purple-800', label: 'Disputed' },
+  }
+  const s = map[status] || { bg: 'bg-gray-100 text-gray-600', label: status || '—' }
+  return <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${s.bg}`}>{s.label}</span>
+}
+
+function TypeBadge({ type }) {
+  const isAdhoc = type === 'adhoc'
+  return (
+    <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${isAdhoc ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+      {isAdhoc ? 'Adhoc' : 'Regular'}
+    </span>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 export default function MISPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  // Data state
-  const [imports, setImports] = useState([])
-  const [trips, setTrips] = useState([])
+  // ── Core data ──
+  const [misImports, setMisImports] = useState([])
+  const [misTrips, setMisTrips] = useState([])
+  const [otdTrips, setOtdTrips] = useState([]) // from trips collection (Shadowfax)
+  const [bids, setBids] = useState([])          // from bids collection
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
 
-  // UI state
-  const [showUpload, setShowUpload] = useState(false)
+  // ── UI state ──
+  const [activeTab, setActiveTab] = useState('import') // import | reconciliation | disputes
+  const [selectedMonth, setSelectedMonth] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
+
+  // Import state
+  const [tripFile, setTripFile] = useState(null)
+  const [cnFile, setCnFile] = useState(null)
+  const [tripParseResult, setTripParseResult] = useState(null)
+  const [cnParseResult, setCnParseResult] = useState(null)
+  const [parsing, setParsing] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleting, setDeleting] = useState(false)
-  const [editingInvoice, setEditingInvoice] = useState(null) // import id being edited
-  const [invoiceNumberInput, setInvoiceNumberInput] = useState('')
 
-  // Filters
-  const [formatFilter, setFormatFilter] = useState('all')
-  const [importFilter, setImportFilter] = useState('all')
-  const [vehicleFilter, setVehicleFilter] = useState('all')
-  const [originFilter, setOriginFilter] = useState('all')
-  const [searchQuery, setSearchQuery] = useState('')
+  // Reconciliation state
+  const [reconciling, setReconciling] = useState(false)
+  const [reconStats, setReconStats] = useState(null)
+  const [missingFromMis, setMissingFromMis] = useState([])
+  const [statusFilter, setStatusFilter] = useState('all')
 
-  // Load data
-  const loadData = async () => {
+  // Dispute editing
+  const [editingDispute, setEditingDispute] = useState(null)
+  const [disputeNotes, setDisputeNotes] = useState('')
+
+  // ── Load all data ──
+  const loadData = useCallback(async () => {
     try {
       setError(null)
-      const [importsSnap, tripsSnap] = await Promise.all([
+      const [misImportsSnap, misTripsSnap, otdTripsSnap, bidsSnap] = await Promise.all([
         getDocs(collection(db, 'mis_imports')),
         getDocs(collection(db, 'mis_trips')),
+        getDocs(collection(db, 'trips')),
+        getDocs(collection(db, 'bids')),
       ])
 
       const importsList = []
-      importsSnap.forEach((d) => importsList.push({ id: d.id, ...d.data() }))
-      importsList.sort((a, b) => {
-        if (a.period_year !== b.period_year) return b.period_year - a.period_year
-        return b.period_month - a.period_month
-      })
+      misImportsSnap.forEach(d => importsList.push({ id: d.id, ...d.data() }))
+      importsList.sort((a, b) => (b.month || '').localeCompare(a.month || ''))
 
       const tripsList = []
-      tripsSnap.forEach((d) => tripsList.push({ id: d.id, ...d.data() }))
-      tripsList.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      misTripsSnap.forEach(d => tripsList.push({ id: d.id, ...d.data() }))
 
-      setImports(importsList)
-      setTrips(tripsList)
+      const otdList = []
+      otdTripsSnap.forEach(d => {
+        const data = d.data()
+        // Only Shadowfax trips
+        if (data.client_name?.toLowerCase().includes('shadowfax') || data.client_id?.toLowerCase().includes('shadowfax')) {
+          otdList.push({ id: d.id, ...data })
+        }
+      })
+
+      const bidsList = []
+      bidsSnap.forEach(d => bidsList.push({ id: d.id, ...d.data() }))
+
+      setMisImports(importsList)
+      setMisTrips(tripsList)
+      setOtdTrips(otdList)
+      setBids(bidsList)
     } catch (err) {
       console.error('Failed to load MIS data:', err)
       setError('Failed to load data: ' + err.message)
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  // ── Derived: trips for selected month ──
+  const monthTrips = useMemo(() => {
+    return misTrips.filter(t => t.month === selectedMonth)
+  }, [misTrips, selectedMonth])
+
+  const monthImport = useMemo(() => {
+    return misImports.find(i => i.month === selectedMonth)
+  }, [misImports, selectedMonth])
+
+  // Available months (from imports)
+  const availableMonths = useMemo(() => {
+    const set = new Set(misImports.map(i => i.month).filter(Boolean))
+    return [...set].sort().reverse()
+  }, [misImports])
+
+  // Filtered trips for reconciliation view
+  const filteredReconTrips = useMemo(() => {
+    if (statusFilter === 'all') return monthTrips
+    return monthTrips.filter(t => t.matchStatus === statusFilter)
+  }, [monthTrips, statusFilter])
+
+  // Dispute trips
+  const disputeTrips = useMemo(() => {
+    return misTrips.filter(t => t.matchStatus === 'disputed' || t.matchStatus === 'amount_mismatch')
+  }, [misTrips])
+
+  // ══════════════════════════════════════════════════════════════════════
+  // IMPORT TAB HANDLERS
+  // ══════════════════════════════════════════════════════════════════════
+
+  const handleTripFileChange = async (e) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setTripFile(f)
+    setParsing(true)
+    setError(null)
+    setTripParseResult(null)
+    try {
+      const result = await parseTripDetailsExcel(f)
+      setTripParseResult(result)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setParsing(false)
+    }
   }
 
-  useEffect(() => { loadData() }, [])
-
-  // ── Derived data ──────────────────────────────────────────────────────
-
-  const vehicles = useMemo(() => {
-    const set = new Set()
-    trips.forEach((t) => { if (t.vehicle_no) set.add(t.vehicle_no) })
-    return [...set].sort()
-  }, [trips])
-
-  const origins = useMemo(() => {
-    const set = new Set()
-    trips.forEach((t) => { if (t.origin) set.add(t.origin) })
-    return [...set].sort()
-  }, [trips])
-
-  const filteredTrips = useMemo(() => {
-    return trips.filter((t) => {
-      if (formatFilter !== 'all' && t.format !== formatFilter) return false
-      if (importFilter !== 'all' && t.import_id !== importFilter) return false
-      if (vehicleFilter !== 'all' && t.vehicle_no !== vehicleFilter) return false
-      if (originFilter !== 'all' && t.origin !== originFilter) return false
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase()
-        const searchFields = [
-          t.trip_id, t.request_id, t.vehicle_no, t.vehicle_code,
-          t.origin, t.destination, t.lane, t.invoice_no,
-        ].filter(Boolean).map(s => s.toLowerCase())
-        if (!searchFields.some(f => f.includes(q))) return false
-      }
-      return true
-    })
-  }, [trips, formatFilter, importFilter, vehicleFilter, originFilter, searchQuery])
-
-  // Summary stats
-  const stats = useMemo(() => {
-    let totalAmount = 0
-    const vehicleSet = new Set()
-    filteredTrips.forEach((t) => {
-      totalAmount += t.total_amount || t.cost || 0
-      if (t.vehicle_no) vehicleSet.add(t.vehicle_no)
-    })
-    return {
-      imports: imports.length,
-      trips: filteredTrips.length,
-      amount: totalAmount,
-      vehicles: vehicleSet.size,
+  const handleCnFileChange = async (e) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setCnFile(f)
+    setParsing(true)
+    setError(null)
+    setCnParseResult(null)
+    try {
+      const result = await parseCreditNoteExcel(f)
+      setCnParseResult(result)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setParsing(false)
     }
-  }, [imports, filteredTrips])
-
-  // ── Formatting helpers ────────────────────────────────────────────────
-
-  const formatCurrency = (amount) =>
-    new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(amount)
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '—'
-    // Handle Firestore Timestamp objects
-    if (dateStr?.toDate) {
-      const d = dateStr.toDate()
-      return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`
-    }
-    // Handle JS Date objects
-    if (dateStr instanceof Date) {
-      return `${dateStr.getDate()}/${dateStr.getMonth() + 1}/${dateStr.getFullYear()}`
-    }
-    const str = String(dateStr)
-    const parts = str.split('-')
-    if (parts.length === 3 && parts[0].length === 4) return `${parts[2]}/${parts[1]}/${parts[0]}`
-    return str
   }
 
-  const formatTimestamp = (ts) => {
-    if (!ts?.toDate) return '—'
-    const d = ts.toDate()
-    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`
-  }
-
-  // ── Invoice status cycling ────────────────────────────────────────────
-
-  const statusCycle = ['pending', 'generated', 'submitted']
-
-  const handleStatusClick = async (imp, e) => {
-    e.stopPropagation()
-    const currentIdx = statusCycle.indexOf(imp.invoice_status || 'pending')
-    const nextStatus = statusCycle[(currentIdx + 1) % statusCycle.length]
-
-    // If cycling to "generated", open invoice number input
-    if (nextStatus === 'generated') {
-      setEditingInvoice(imp.id)
-      setInvoiceNumberInput(imp.invoice_number || '')
-      // Still update status
-      try {
-        await updateDoc(doc(db, 'mis_imports', imp.id), { invoice_status: nextStatus })
-        setImports(prev => prev.map(i =>
-          i.id === imp.id ? { ...i, invoice_status: nextStatus } : i
-        ))
-      } catch (err) {
-        console.error('Failed to update status:', err)
-      }
+  const handleImport = async () => {
+    if (!tripParseResult) {
+      setError('Please upload a Trip Details file first.')
       return
     }
-
+    setImporting(true)
+    setError(null)
     try {
-      const updates = { invoice_status: nextStatus }
-      if (nextStatus === 'pending') {
-        updates.invoice_number = null
+      const [year, month] = selectedMonth.split('-').map(Number)
+      const periodLabel = `${MONTHS[month - 1]} ${year}`
+
+      // Check for existing import for this month
+      const existing = misImports.find(i => i.month === selectedMonth)
+      if (existing) {
+        // Delete old data first
+        const oldTripsQuery = query(collection(db, 'mis_trips'), where('month', '==', selectedMonth))
+        const oldSnap = await getDocs(oldTripsQuery)
+        const oldRefs = []
+        oldSnap.forEach(d => oldRefs.push(d.ref))
+        for (let i = 0; i < oldRefs.length; i += BATCH_SIZE) {
+          const batch = writeBatch(db)
+          oldRefs.slice(i, i + BATCH_SIZE).forEach(r => batch.delete(r))
+          await batch.commit()
+        }
+        await deleteDoc(doc(db, 'mis_imports', existing.id))
       }
-      await updateDoc(doc(db, 'mis_imports', imp.id), updates)
-      setImports(prev => prev.map(i =>
-        i.id === imp.id ? { ...i, ...updates } : i
-      ))
-    } catch (err) {
-      console.error('Failed to update status:', err)
-    }
-  }
 
-  const handleInvoiceNumberSave = async (impId) => {
-    try {
-      await updateDoc(doc(db, 'mis_imports', impId), {
-        invoice_number: invoiceNumberInput.trim() || null,
-      })
-      setImports(prev => prev.map(i =>
-        i.id === impId ? { ...i, invoice_number: invoiceNumberInput.trim() || null } : i
-      ))
-      setEditingInvoice(null)
-    } catch (err) {
-      console.error('Failed to save invoice number:', err)
-    }
-  }
+      // Combine all trips
+      const allTrips = [
+        ...tripParseResult.adhocTrips,
+        ...tripParseResult.regularTrips,
+      ]
 
-  // ── Delete import ─────────────────────────────────────────────────────
+      // Merge credit note data if available
+      let cnSummary = null
+      if (cnParseResult) {
+        const mergeResult = mergeCreditNoteData(allTrips, cnParseResult.trips)
+        cnSummary = {
+          ...cnParseResult.summary,
+          mergedCount: mergeResult.mergedCount,
+          revision: 1,
+          lastUpdated: new Date().toISOString(),
+        }
+      }
 
-  const handleDelete = async (imp) => {
-    setDeleting(true)
-    try {
-      // Find all trips for this import
-      const tripsQuery = query(
-        collection(db, 'mis_trips'),
-        where('import_id', '==', imp.id)
-      )
-      const tripsSnap = await getDocs(tripsQuery)
+      // Create import doc
+      const importData = {
+        client: 'Shadowfax',
+        month: selectedMonth,
+        periodLabel,
+        importedAt: serverTimestamp(),
+        importedBy: user.email,
+        adhocTrips: tripParseResult.summary.adhocCount,
+        adhocTotal: tripParseResult.summary.adhocTotal,
+        regularTrips: tripParseResult.summary.regularCount,
+        totalTrips: allTrips.length,
+        status: 'draft',
+        files: {
+          tripDetails: tripFile?.name || null,
+          creditNote: cnFile?.name || null,
+        },
+      }
+      if (cnSummary) {
+        importData.cnSummary = cnSummary
+      }
 
-      // Chunked batch delete
-      const tripDocs = []
-      tripsSnap.forEach((d) => tripDocs.push(d.ref))
+      const importRef = await addDoc(collection(db, 'mis_imports'), importData)
 
-      for (let i = 0; i < tripDocs.length; i += BATCH_SIZE) {
+      // Write trips in batches
+      for (let i = 0; i < allTrips.length; i += BATCH_SIZE) {
         const batch = writeBatch(db)
-        tripDocs.slice(i, i + BATCH_SIZE).forEach((ref) => batch.delete(ref))
+        allTrips.slice(i, i + BATCH_SIZE).forEach(trip => {
+          const tripRef = doc(collection(db, 'mis_trips'))
+          batch.set(tripRef, {
+            ...trip,
+            misImportId: importRef.id,
+            month: selectedMonth,
+            client: 'Shadowfax',
+            matchStatus: null,
+            otd_bidId: null,
+            otd_bidAmount: null,
+            otd_tripId: null,
+            amountDifference: null,
+            disputeReason: null,
+            disputeNotes: '',
+            resolvedAmount: null,
+            created_at: serverTimestamp(),
+          })
+        })
         await batch.commit()
       }
 
-      // Delete the import doc
-      await deleteDoc(doc(db, 'mis_imports', imp.id))
-
-      // Update local state
-      setImports(prev => prev.filter(i => i.id !== imp.id))
-      setTrips(prev => prev.filter(t => t.import_id !== imp.id))
-      setDeleteConfirm(null)
+      setSuccess(`Imported ${allTrips.length} trips (${tripParseResult.summary.adhocCount} Adhoc + ${tripParseResult.summary.regularCount} Regular)${cnSummary ? ` with Credit Note data` : ''}`)
+      setTripFile(null)
+      setCnFile(null)
+      setTripParseResult(null)
+      setCnParseResult(null)
+      setLoading(true)
+      await loadData()
     } catch (err) {
-      console.error('Failed to delete import:', err)
-      setError('Failed to delete: ' + err.message)
+      setError('Import failed: ' + err.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleUploadCreditNote = async () => {
+    if (!cnParseResult || !monthImport) return
+    setImporting(true)
+    setError(null)
+    try {
+      // Merge CN data into existing month's trips
+      const monthTripsCopy = monthTrips.map(t => ({ ...t }))
+      const mergeResult = mergeCreditNoteData(monthTripsCopy, cnParseResult.trips)
+
+      // Update each merged trip in Firestore
+      for (const trip of monthTripsCopy) {
+        if (trip.cn_tripId) {
+          const updates = {}
+          for (const key of Object.keys(trip)) {
+            if (key.startsWith('cn_')) updates[key] = trip[key]
+          }
+          if (trip.matchStatus) updates.matchStatus = trip.matchStatus
+          if (trip.amountDifference !== undefined) updates.amountDifference = trip.amountDifference
+          await updateDoc(doc(db, 'mis_trips', trip.id), updates)
+        }
+      }
+
+      // Update import doc with CN summary
+      const cnSummary = {
+        ...cnParseResult.summary,
+        mergedCount: mergeResult.mergedCount,
+        revision: (monthImport.cnSummary?.revision || 0) + 1,
+        lastUpdated: new Date().toISOString(),
+      }
+      await updateDoc(doc(db, 'mis_imports', monthImport.id), {
+        cnSummary,
+        'files.creditNote': cnFile?.name || null,
+      })
+
+      setSuccess(`Merged Credit Note data: ${mergeResult.mergedCount}/${mergeResult.totalCnTrips} trips matched`)
+      setCnFile(null)
+      setCnParseResult(null)
+      setLoading(true)
+      await loadData()
+    } catch (err) {
+      setError('Credit Note upload failed: ' + err.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleDeleteImport = async (imp) => {
+    setDeleting(true)
+    try {
+      const tripsQuery = query(collection(db, 'mis_trips'), where('month', '==', imp.month))
+      const snap = await getDocs(tripsQuery)
+      const refs = []
+      snap.forEach(d => refs.push(d.ref))
+      for (let i = 0; i < refs.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db)
+        refs.slice(i, i + BATCH_SIZE).forEach(r => batch.delete(r))
+        await batch.commit()
+      }
+      await deleteDoc(doc(db, 'mis_imports', imp.id))
+      setDeleteConfirm(null)
+      setLoading(true)
+      await loadData()
+    } catch (err) {
+      setError('Delete failed: ' + err.message)
     } finally {
       setDeleting(false)
     }
   }
 
-  // ── Status badge component ────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+  // RECONCILIATION HANDLERS
+  // ══════════════════════════════════════════════════════════════════════
 
-  const StatusBadge = ({ status }) => {
-    const styles = {
-      pending: 'bg-yellow-100 text-yellow-800',
-      generated: 'bg-green-100 text-green-800',
-      submitted: 'bg-blue-100 text-blue-800',
+  const handleReconcile = async () => {
+    if (monthTrips.length === 0) {
+      setError('No MIS data for selected month. Import first.')
+      return
     }
-    return (
-      <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${styles[status] || 'bg-gray-100 text-gray-800'}`}>
-        {status || 'pending'}
-      </span>
-    )
+    setReconciling(true)
+    setError(null)
+    try {
+      // Get month's date range for filtering OTD trips
+      const [year, month] = selectedMonth.split('-').map(Number)
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+      const endDay = new Date(year, month, 0).getDate()
+      const endDate = `${year}-${String(month).padStart(2, '0')}-${endDay}`
+
+      const monthOtdTrips = otdTrips.filter(t => t.date >= startDate && t.date <= endDate)
+
+      // Run reconciliation
+      const tripsCopy = monthTrips.map(t => ({ ...t }))
+      const result = reconcile(tripsCopy, monthOtdTrips, bids)
+
+      setReconStats(result.stats)
+      setMissingFromMis(result.missingFromMis)
+
+      // Persist match results to Firestore
+      for (const trip of result.misTrips) {
+        await updateDoc(doc(db, 'mis_trips', trip.id), {
+          matchStatus: trip.matchStatus,
+          otd_bidId: trip.otd_bidId || null,
+          otd_bidAmount: trip.otd_bidAmount || null,
+          otd_tripId: trip.otd_tripId || null,
+          amountDifference: trip.amountDifference || null,
+          reconciledAt: serverTimestamp(),
+          reconciledBy: user.email,
+        })
+      }
+
+      // Update import status
+      if (monthImport) {
+        await updateDoc(doc(db, 'mis_imports', monthImport.id), {
+          status: 'in_progress',
+          reconStats: result.stats,
+        })
+      }
+
+      // Refresh data
+      setLoading(true)
+      await loadData()
+      setSuccess(`Reconciliation complete: ${result.stats.matched} matched, ${result.stats.amountMismatch} mismatches, ${result.stats.unmatched} unmatched`)
+    } catch (err) {
+      setError('Reconciliation failed: ' + err.message)
+    } finally {
+      setReconciling(false)
+    }
   }
 
-  const FormatBadge = ({ format }) => {
-    const styles = {
-      regular: 'bg-blue-100 text-blue-700',
-      adhoc: 'bg-amber-100 text-amber-700',
-      km_reading: 'bg-green-100 text-green-700',
+  // ══════════════════════════════════════════════════════════════════════
+  // DISPUTE HANDLERS
+  // ══════════════════════════════════════════════════════════════════════
+
+  const handleMarkDisputed = async (trip) => {
+    try {
+      await updateDoc(doc(db, 'mis_trips', trip.id), {
+        matchStatus: 'disputed',
+      })
+      setMisTrips(prev => prev.map(t => t.id === trip.id ? { ...t, matchStatus: 'disputed' } : t))
+    } catch (err) {
+      setError('Failed to mark as disputed: ' + err.message)
     }
-    const labels = {
-      regular: 'Regular',
-      adhoc: 'Adhoc',
-      km_reading: 'KM Reading',
-    }
-    return (
-      <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${styles[format] || 'bg-gray-100 text-gray-600'}`}>
-        {labels[format] || format}
-      </span>
-    )
   }
 
-  // ── Render ────────────────────────────────────────────────────────────
+  const handleSaveDisputeNotes = async (tripId) => {
+    try {
+      await updateDoc(doc(db, 'mis_trips', tripId), {
+        disputeNotes,
+      })
+      setMisTrips(prev => prev.map(t => t.id === tripId ? { ...t, disputeNotes } : t))
+      setEditingDispute(null)
+      setDisputeNotes('')
+    } catch (err) {
+      setError('Failed to save notes: ' + err.message)
+    }
+  }
+
+  const handleResolveDispute = async (trip, resolvedAmount) => {
+    try {
+      await updateDoc(doc(db, 'mis_trips', trip.id), {
+        matchStatus: 'matched',
+        resolvedAmount: resolvedAmount || null,
+        disputeNotes: trip.disputeNotes || '',
+      })
+      setMisTrips(prev => prev.map(t => t.id === trip.id ? { ...t, matchStatus: 'matched', resolvedAmount } : t))
+    } catch (err) {
+      setError('Failed to resolve: ' + err.message)
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ══════════════════════════════════════════════════════════════════════
 
   if (loading) {
     return (
@@ -279,45 +482,25 @@ export default function MISPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Upload Modal */}
-      {showUpload && (
-        <MISUploadModal
-          onClose={() => setShowUpload(false)}
-          onImported={() => {
-            setShowUpload(false)
-            setLoading(true)
-            loadData()
-          }}
-          existingImports={imports}
-        />
-      )}
-
       {/* Delete Confirmation */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm mx-4 w-full">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Import</h3>
             <p className="text-sm text-gray-600 mb-1">
-              Delete <span className="font-medium">{deleteConfirm.filename}</span>?
+              Delete MIS data for <span className="font-medium">{deleteConfirm.periodLabel}</span>?
             </p>
             <p className="text-sm text-gray-600 mb-1">
-              This will remove <span className="font-medium">{deleteConfirm.trip_count} trip records</span> for{' '}
-              {deleteConfirm.period_label}.
+              This will remove <span className="font-medium">{deleteConfirm.totalTrips} trip records</span>.
             </p>
             <p className="text-xs text-red-500 mb-4">This action cannot be undone.</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                disabled={deleting}
-                className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm disabled:opacity-50"
-              >
+              <button onClick={() => setDeleteConfirm(null)} disabled={deleting}
+                className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm disabled:opacity-50">
                 Cancel
               </button>
-              <button
-                onClick={() => handleDelete(deleteConfirm)}
-                disabled={deleting}
-                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm disabled:opacity-50"
-              >
+              <button onClick={() => handleDeleteImport(deleteConfirm)} disabled={deleting}
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm disabled:opacity-50">
                 {deleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
@@ -329,337 +512,505 @@ export default function MISPage() {
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate('/')} className="text-gray-500 hover:text-gray-700">
-              &larr; Dashboard
-            </button>
-            <h1 className="text-xl font-bold text-gray-900">MIS Dashboard</h1>
+            <button onClick={() => navigate('/')} className="text-gray-500 hover:text-gray-700">&larr; Dashboard</button>
+            <h1 className="text-xl font-bold text-gray-900">MIS Reconciliation</h1>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-500 hidden sm:inline">{user.email}</span>
-            <button onClick={logout} className="text-sm text-red-600 hover:text-red-800 font-medium">
-              Sign Out
-            </button>
+            <button onClick={logout} className="text-sm text-red-600 hover:text-red-800 font-medium">Sign Out</button>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
+        {/* Messages */}
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-            {error}
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex justify-between items-center">
+            <span>{error}</span>
+            <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 ml-2">×</button>
+          </div>
+        )}
+        {success && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex justify-between items-center">
+            <span>{success}</span>
+            <button onClick={() => setSuccess(null)} className="text-green-500 hover:text-green-700 ml-2">×</button>
           </div>
         )}
 
-        {/* Action Bar */}
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-gray-900">Shadowfax MIS</h2>
-          <button
-            onClick={() => setShowUpload(true)}
-            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm"
-          >
-            + Import MIS
-          </button>
+        {/* Sub-tab bar */}
+        <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 overflow-x-auto">
+          {[
+            { key: 'import', label: 'Import' },
+            { key: 'reconciliation', label: 'Reconciliation' },
+            { key: 'disputes', label: `Disputes (${disputeTrips.length})` },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 min-w-[100px] px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* Summary Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <p className="text-sm text-gray-500">Imports</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{stats.imports}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <p className="text-sm text-gray-500">Total Rows</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{stats.trips}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <p className="text-sm text-gray-500">Total Billing</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(stats.amount)}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <p className="text-sm text-gray-500">Vehicles</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{stats.vehicles}</p>
-          </div>
-        </div>
-
-        {/* Import History */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Import History</h3>
-          </div>
-          {imports.length === 0 ? (
-            <div className="px-6 py-8 text-center text-gray-500">
-              <p className="mb-1">No MIS data imported yet.</p>
-              <p className="text-sm">Click "Import MIS" to upload a Shadowfax Excel file.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-gray-500 text-left">
-                  <tr>
-                    <th className="px-4 py-2.5 font-medium">Period</th>
-                    <th className="px-4 py-2.5 font-medium hidden sm:table-cell">File</th>
-                    <th className="px-4 py-2.5 font-medium">Formats</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Rows</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Amount</th>
-                    <th className="px-4 py-2.5 font-medium">Invoice</th>
-                    <th className="px-4 py-2.5 font-medium hidden lg:table-cell">Provision</th>
-                    <th className="px-4 py-2.5 font-medium hidden sm:table-cell">Imported</th>
-                    <th className="px-4 py-2.5 font-medium w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {imports.map((imp) => (
-                    <tr key={imp.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
-                        {imp.period_label}
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 hidden sm:table-cell text-xs max-w-[160px] truncate" title={imp.filename}>
-                        {imp.filename}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-1 flex-wrap">
-                          {(imp.formats || []).map((f, i) => (
-                            <FormatBadge key={i} format={f} />
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-900 text-right">{imp.trip_count}</td>
-                      <td className="px-4 py-3 text-gray-900 text-right whitespace-nowrap">
-                        {formatCurrency(imp.total_amount || 0)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={(e) => handleStatusClick(imp, e)}
-                            title="Click to cycle status"
-                          >
-                            <StatusBadge status={imp.invoice_status} />
-                          </button>
-                          {/* Invoice number edit */}
-                          {editingInvoice === imp.id ? (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="text"
-                                value={invoiceNumberInput}
-                                onChange={(e) => setInvoiceNumberInput(e.target.value)}
-                                placeholder="RS/047/25-26"
-                                className="w-28 px-1.5 py-0.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleInvoiceNumberSave(imp.id)
-                                  if (e.key === 'Escape') setEditingInvoice(null)
-                                }}
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => handleInvoiceNumberSave(imp.id)}
-                                className="text-green-600 hover:text-green-800 text-xs font-medium"
-                              >
-                                ✓
-                              </button>
-                            </div>
-                          ) : imp.invoice_number ? (
-                            <button
-                              onClick={() => {
-                                setEditingInvoice(imp.id)
-                                setInvoiceNumberInput(imp.invoice_number || '')
-                              }}
-                              className="text-xs text-gray-500 hover:text-blue-600"
-                            >
-                              {imp.invoice_number}
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 hidden lg:table-cell text-xs">
-                        {imp.provision_amount ? formatCurrency(imp.provision_amount) : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 hidden sm:table-cell text-xs whitespace-nowrap">
-                        {formatTimestamp(imp.imported_at)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => setDeleteConfirm(imp)}
-                          className="text-gray-400 hover:text-red-600 transition-colors p-1"
-                          title="Delete import"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        {/* Month selector (shared across tabs) */}
+        <div className="flex items-center gap-3 mb-6">
+          <label className="text-sm font-medium text-gray-700">Month:</label>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          {monthImport && (
+            <span className="text-xs text-green-600 font-medium">✓ Data imported</span>
           )}
         </div>
 
-        {/* Filters */}
-        {trips.length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-              <select
-                value={formatFilter}
-                onChange={(e) => setFormatFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Formats</option>
-                <option value="regular">Regular</option>
-                <option value="adhoc">Adhoc</option>
-                <option value="km_reading">KM Reading</option>
-              </select>
+        {/* ════════════════════════════════════════════════════════════════ */}
+        {/* IMPORT TAB */}
+        {/* ════════════════════════════════════════════════════════════════ */}
+        {activeTab === 'import' && (
+          <div className="space-y-6">
+            {/* Upload Trip Details */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">
+                1. Upload Trip Details (Muneem&apos;s Excel)
+              </h3>
+              <div className="flex flex-col sm:flex-row gap-3 items-start">
+                <label className="flex-1 cursor-pointer">
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
+                    <p className="text-sm text-gray-500">
+                      {tripFile ? tripFile.name : 'Drop or tap to select Excel file'}
+                    </p>
+                    {parsing && <p className="text-xs text-blue-600 mt-1">Parsing...</p>}
+                  </div>
+                  <input type="file" accept=".xlsx,.xls" onChange={handleTripFileChange} className="hidden" />
+                </label>
+              </div>
 
-              <select
-                value={importFilter}
-                onChange={(e) => setImportFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Imports</option>
-                {imports.map((imp) => (
-                  <option key={imp.id} value={imp.id}>{imp.period_label}</option>
-                ))}
-              </select>
+              {tripParseResult && (
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                  <p className="font-medium text-blue-900">
+                    Found: {tripParseResult.summary.adhocCount} Adhoc trips ({formatCurrency(tripParseResult.summary.adhocTotal)}) + {tripParseResult.summary.regularCount} Regular trips
+                  </p>
+                </div>
+              )}
+            </div>
 
-              <select
-                value={vehicleFilter}
-                onChange={(e) => setVehicleFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Vehicles</option>
-                {vehicles.map((v) => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
+            {/* Upload Credit Note (optional) */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                2. Upload Credit Note Summary (Optional)
+              </h3>
+              <p className="text-xs text-gray-400 mb-4">Can be uploaded later or updated when revised CN arrives</p>
+              <div className="flex flex-col sm:flex-row gap-3 items-start">
+                <label className="flex-1 cursor-pointer">
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
+                    <p className="text-sm text-gray-500">
+                      {cnFile ? cnFile.name : 'Drop or tap to select Credit Note Excel'}
+                    </p>
+                  </div>
+                  <input type="file" accept=".xlsx,.xls" onChange={handleCnFileChange} className="hidden" />
+                </label>
+              </div>
 
-              <select
-                value={originFilter}
-                onChange={(e) => setOriginFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Origins</option>
-                {origins.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
+              {cnParseResult && (
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                  <p className="font-medium text-blue-900">
+                    Found: {cnParseResult.summary.totalTrips} trips | Freight: {formatCurrency(cnParseResult.summary.totalFreightAmount)} | SFX Final: {formatCurrency(cnParseResult.summary.totalSfxFinalAmount)} | Diff: {formatCurrency(cnParseResult.summary.totalDiff)}
+                  </p>
+                </div>
+              )}
 
-              <input
-                type="text"
-                placeholder="Search trip ID, vehicle..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+              {/* If month already imported, show separate CN upload button */}
+              {monthImport && cnParseResult && !tripParseResult && (
+                <button
+                  onClick={handleUploadCreditNote}
+                  disabled={importing}
+                  className="mt-4 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium text-sm disabled:opacity-50"
+                >
+                  {importing ? 'Merging...' : 'Merge Credit Note into existing data'}
+                </button>
+              )}
+            </div>
+
+            {/* Import button */}
+            {tripParseResult && (
+              <button
+                onClick={handleImport}
+                disabled={importing}
+                className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
+              >
+                {importing ? 'Importing...' : `Import ${tripParseResult.summary.adhocCount + tripParseResult.summary.regularCount} trips for ${selectedMonth}`}
+                {monthImport && ' (replaces existing)'}
+              </button>
+            )}
+
+            {/* Import History */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Import History</h3>
+              </div>
+              {misImports.length === 0 ? (
+                <div className="px-6 py-8 text-center text-gray-500 text-sm">No imports yet.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-left">
+                      <tr>
+                        <th className="px-4 py-2.5 font-medium">Month</th>
+                        <th className="px-4 py-2.5 font-medium text-right">Adhoc</th>
+                        <th className="px-4 py-2.5 font-medium text-right">Regular</th>
+                        <th className="px-4 py-2.5 font-medium text-right">Total</th>
+                        <th className="px-4 py-2.5 font-medium text-right">Adhoc Amount</th>
+                        <th className="px-4 py-2.5 font-medium hidden sm:table-cell">CN</th>
+                        <th className="px-4 py-2.5 font-medium">Status</th>
+                        <th className="px-4 py-2.5 font-medium w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {misImports.map(imp => (
+                        <tr key={imp.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{imp.periodLabel}</td>
+                          <td className="px-4 py-3 text-right">{imp.adhocTrips || 0}</td>
+                          <td className="px-4 py-3 text-right">{imp.regularTrips || 0}</td>
+                          <td className="px-4 py-3 text-right font-medium">{imp.totalTrips || 0}</td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap">{formatCurrency(imp.adhocTotal || 0)}</td>
+                          <td className="px-4 py-3 hidden sm:table-cell">
+                            {imp.cnSummary ? (
+                              <span className="text-xs text-green-600">v{imp.cnSummary.revision} | Diff: {formatCurrency(imp.cnSummary.totalDiff)}</span>
+                            ) : (
+                              <span className="text-xs text-gray-400">Not uploaded</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                              imp.status === 'resolved' ? 'bg-green-100 text-green-800' :
+                              imp.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                              imp.status === 'disputed' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>{imp.status || 'draft'}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button onClick={() => setDeleteConfirm(imp)}
+                              className="text-gray-400 hover:text-red-600 transition-colors p-1" title="Delete">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Results count */}
-        {trips.length > 0 && (
-          <p className="text-sm text-gray-500 mb-3">
-            {filteredTrips.length} row{filteredTrips.length !== 1 ? 's' : ''}
-            {formatFilter !== 'all' && ` (${formatFilter})`}
-          </p>
-        )}
+        {/* ════════════════════════════════════════════════════════════════ */}
+        {/* RECONCILIATION TAB */}
+        {/* ════════════════════════════════════════════════════════════════ */}
+        {activeTab === 'reconciliation' && (
+          <div className="space-y-6">
+            {/* Action bar */}
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+              <p className="text-sm text-gray-500">{monthTrips.length} MIS trips for selected month</p>
+              <button
+                onClick={handleReconcile}
+                disabled={reconciling || monthTrips.length === 0}
+                className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm disabled:opacity-50"
+              >
+                {reconciling ? 'Reconciling...' : 'Run Reconciliation'}
+              </button>
+            </div>
 
-        {/* Trips Table */}
-        {trips.length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            {filteredTrips.length === 0 ? (
-              <div className="px-6 py-12 text-center text-gray-500">
-                No rows match your filters.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-500 text-left">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">Format</th>
-                      <th className="px-4 py-3 font-medium">Trip / Vehicle ID</th>
-                      <th className="px-4 py-3 font-medium">Date</th>
-                      <th className="px-4 py-3 font-medium">Vehicle</th>
-                      <th className="px-4 py-3 font-medium">Origin</th>
-                      <th className="px-4 py-3 font-medium">Destination</th>
-                      {/* Conditional columns based on format */}
-                      {(formatFilter === 'all' || formatFilter === 'regular') && (
-                        <>
-                          <th className="px-4 py-3 font-medium text-right hidden lg:table-cell">Freight</th>
-                          <th className="px-4 py-3 font-medium text-right hidden lg:table-cell">Other</th>
-                          <th className="px-4 py-3 font-medium text-right hidden lg:table-cell">GST</th>
-                        </>
-                      )}
-                      {(formatFilter === 'km_reading') && (
-                        <>
-                          <th className="px-4 py-3 font-medium text-right">Trips</th>
-                          <th className="px-4 py-3 font-medium text-right">Total KM</th>
-                          <th className="px-4 py-3 font-medium text-right">Toll</th>
-                        </>
-                      )}
-                      <th className="px-4 py-3 font-medium text-right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {filteredTrips.slice(0, 500).map((t) => (
-                      <tr key={t.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <FormatBadge format={t.format} />
-                        </td>
-                        <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
-                          {t.trip_id || t.request_id || t.vehicle_code || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {formatDate(t.date)}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {t.vehicle_no || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500">
-                          {t.origin || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500">
-                          {t.destination || t.via || '—'}
-                        </td>
-                        {/* Conditional columns */}
-                        {(formatFilter === 'all' || formatFilter === 'regular') && (
-                          <>
-                            <td className="px-4 py-3 text-gray-500 text-right hidden lg:table-cell whitespace-nowrap">
-                              {t.freight_amount ? formatCurrency(t.freight_amount) : '—'}
-                            </td>
-                            <td className="px-4 py-3 text-gray-500 text-right hidden lg:table-cell whitespace-nowrap">
-                              {t.other_charges ? formatCurrency(t.other_charges) : '—'}
-                            </td>
-                            <td className="px-4 py-3 text-gray-500 text-right hidden lg:table-cell whitespace-nowrap">
-                              {t.gst ? formatCurrency(t.gst) : '—'}
-                            </td>
-                          </>
-                        )}
-                        {(formatFilter === 'km_reading') && (
-                          <>
-                            <td className="px-4 py-3 text-gray-900 text-right">
-                              {t.trip_count || '—'}
-                            </td>
-                            <td className="px-4 py-3 text-gray-900 text-right">
-                              {t.total_travel_km ? `${t.total_travel_km} km` : '—'}
-                            </td>
-                            <td className="px-4 py-3 text-gray-500 text-right whitespace-nowrap">
-                              {t.toll_charges ? formatCurrency(t.toll_charges) : '—'}
-                            </td>
-                          </>
-                        )}
-                        <td className="px-4 py-3 text-gray-900 font-medium text-right whitespace-nowrap">
-                          {formatCurrency(t.total_amount || t.cost || 0)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {filteredTrips.length > 500 && (
-                  <div className="px-4 py-3 text-center text-sm text-gray-500 bg-gray-50 border-t border-gray-200">
-                    Showing first 500 of {filteredTrips.length} rows. Use filters to narrow results.
+            {/* Summary cards */}
+            {(reconStats || monthImport?.reconStats) && (() => {
+              const stats = reconStats || monthImport?.reconStats
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <p className="text-xs text-green-600 font-medium">Matched</p>
+                    <p className="text-xl font-bold text-green-900">{stats.matched}</p>
                   </div>
-                )}
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-xs text-amber-600 font-medium">Amt Mismatch</p>
+                    <p className="text-xl font-bold text-amber-900">{stats.amountMismatch}</p>
+                  </div>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-xs text-red-600 font-medium">Missing in OTD</p>
+                    <p className="text-xl font-bold text-red-900">{stats.unmatched}</p>
+                  </div>
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                    <p className="text-xs text-purple-600 font-medium">Disputed</p>
+                    <p className="text-xl font-bold text-purple-900">{stats.disputed}</p>
+                  </div>
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                    <p className="text-xs text-orange-600 font-medium">Missing in MIS</p>
+                    <p className="text-xl font-bold text-orange-900">{missingFromMis.length || stats.missingFromMis || 0}</p>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* CN Summary if available */}
+            {monthImport?.cnSummary && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Credit Note Summary (v{monthImport.cnSummary.revision})</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div>
+                    <p className="text-gray-500">OTD Freight</p>
+                    <p className="font-medium">{formatCurrency(monthImport.cnSummary.totalFreightAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">SFX Final</p>
+                    <p className="font-medium">{formatCurrency(monthImport.cnSummary.totalSfxFinalAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Difference</p>
+                    <p className="font-medium text-red-600">{formatCurrency(monthImport.cnSummary.totalDiff)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Trips Matched</p>
+                    <p className="font-medium">{monthImport.cnSummary.mergedCount}/{monthImport.cnSummary.totalTrips}</p>
+                  </div>
+                </div>
               </div>
             )}
+
+            {/* Filter by status */}
+            <div className="flex gap-2 flex-wrap">
+              {['all', 'matched', 'amount_mismatch', 'unmatched', 'disputed'].map(s => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    statusFilter === s
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {s === 'all' ? 'All' : s === 'amount_mismatch' ? 'Amt Mismatch' : s === 'unmatched' ? 'Missing in OTD' : s.charAt(0).toUpperCase() + s.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            {/* Reconciliation table */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              {filteredReconTrips.length === 0 ? (
+                <div className="px-6 py-8 text-center text-gray-500 text-sm">
+                  {monthTrips.length === 0 ? 'No MIS data for this month. Import first.' : 'No trips match filter. Run reconciliation first.'}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-left">
+                      <tr>
+                        <th className="px-3 py-2.5 font-medium">Status</th>
+                        <th className="px-3 py-2.5 font-medium">Type</th>
+                        <th className="px-3 py-2.5 font-medium">Date</th>
+                        <th className="px-3 py-2.5 font-medium">Vehicle</th>
+                        <th className="px-3 py-2.5 font-medium">Origin → Dest</th>
+                        <th className="px-3 py-2.5 font-medium text-right">MIS Amt</th>
+                        <th className="px-3 py-2.5 font-medium text-right">OTD Amt</th>
+                        <th className="px-3 py-2.5 font-medium text-right">CN Diff</th>
+                        <th className="px-3 py-2.5 font-medium w-20">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {filteredReconTrips.slice(0, 500).map(t => (
+                        <tr key={t.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2.5"><MatchBadge status={t.matchStatus} /></td>
+                          <td className="px-3 py-2.5"><TypeBadge type={t.tripType} /></td>
+                          <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">{formatDate(t.sfx_date)}</td>
+                          <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap text-xs">{t.sfx_vehicleNo || '—'}</td>
+                          <td className="px-3 py-2.5 text-gray-500 text-xs">
+                            {t.sfx_origin || '—'} → {t.sfx_destination || '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                            {t.sfx_cost ? formatCurrency(t.sfx_cost) : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                            {t.otd_bidAmount ? formatCurrency(t.otd_bidAmount) : '—'}
+                          </td>
+                          <td className={`px-3 py-2.5 text-right whitespace-nowrap ${t.cn_diff && t.cn_diff !== 0 ? 'text-red-600 font-medium' : ''}`}>
+                            {t.cn_diff != null ? formatCurrency(t.cn_diff) : '—'}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {t.matchStatus !== 'matched' && t.matchStatus !== 'disputed' && (
+                              <button onClick={() => handleMarkDisputed(t)}
+                                className="text-xs text-purple-600 hover:text-purple-800 font-medium">
+                                Dispute
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {filteredReconTrips.length > 500 && (
+                    <div className="px-4 py-3 text-center text-sm text-gray-500 bg-gray-50 border-t">
+                      Showing first 500 of {filteredReconTrips.length}. Use filters to narrow.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Missing from MIS section */}
+            {missingFromMis.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-orange-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-orange-200 bg-orange-50">
+                  <h3 className="text-sm font-semibold text-orange-800">
+                    Missing from Shadowfax MIS ({missingFromMis.length} trips)
+                  </h3>
+                  <p className="text-xs text-orange-600 mt-0.5">
+                    OTD logged these trips but they&apos;re not in Shadowfax&apos;s MIS — you may be owed money
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-left">
+                      <tr>
+                        <th className="px-3 py-2.5 font-medium">Date</th>
+                        <th className="px-3 py-2.5 font-medium">Vehicle</th>
+                        <th className="px-3 py-2.5 font-medium">Origin → Dest</th>
+                        <th className="px-3 py-2.5 font-medium text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {missingFromMis.map(t => (
+                        <tr key={t.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(t.date)}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-xs">{t.vehicle_no}</td>
+                          <td className="px-3 py-2.5 text-xs">{t.origin} → {t.destination}</td>
+                          <td className="px-3 py-2.5 text-right font-medium">{formatCurrency(t.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════════════════════════ */}
+        {/* DISPUTES TAB */}
+        {/* ════════════════════════════════════════════════════════════════ */}
+        {activeTab === 'disputes' && (
+          <div className="space-y-6">
+            {/* Summary */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <p className="text-sm text-gray-500">Total Disputed</p>
+                <p className="text-2xl font-bold text-gray-900">{disputeTrips.filter(t => t.matchStatus === 'disputed').length}</p>
+              </div>
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <p className="text-sm text-gray-500">Amount Mismatches</p>
+                <p className="text-2xl font-bold text-amber-600">{disputeTrips.filter(t => t.matchStatus === 'amount_mismatch').length}</p>
+              </div>
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <p className="text-sm text-gray-500">Total Difference</p>
+                <p className="text-2xl font-bold text-red-600">
+                  {formatCurrency(disputeTrips.reduce((s, t) => s + Math.abs(t.amountDifference || t.cn_diff || 0), 0))}
+                </p>
+              </div>
+            </div>
+
+            {/* Dispute list */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              {disputeTrips.length === 0 ? (
+                <div className="px-6 py-8 text-center text-gray-500 text-sm">
+                  No disputes or mismatches found. Run reconciliation first.
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-200">
+                  {disputeTrips.map(t => (
+                    <div key={t.id} className="p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-2">
+                        <MatchBadge status={t.matchStatus} />
+                        <TypeBadge type={t.tripType} />
+                        <span className="text-sm text-gray-500">{formatDate(t.sfx_date)}</span>
+                        <span className="text-sm font-medium">{t.sfx_vehicleNo}</span>
+                        <span className="text-sm text-gray-500">{t.sfx_origin} → {t.sfx_destination}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm mb-2">
+                        <div>
+                          <span className="text-gray-500">MIS Amount: </span>
+                          <span className="font-medium">{formatCurrency(t.sfx_cost || t.cn_freightAmount)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">OTD Amount: </span>
+                          <span className="font-medium">{formatCurrency(t.otd_bidAmount)}</span>
+                        </div>
+                        {t.cn_sfxFinalAmount != null && (
+                          <div>
+                            <span className="text-gray-500">SFX Final: </span>
+                            <span className="font-medium">{formatCurrency(t.cn_sfxFinalAmount)}</span>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-gray-500">Diff: </span>
+                          <span className="font-medium text-red-600">{formatCurrency(t.amountDifference || t.cn_diff)}</span>
+                        </div>
+                      </div>
+
+                      {t.cn_remark && (
+                        <p className="text-xs text-gray-500 mb-2">SFX Remark: {t.cn_remark}</p>
+                      )}
+
+                      {/* Dispute notes */}
+                      {editingDispute === t.id ? (
+                        <div className="flex gap-2 mt-2">
+                          <input
+                            type="text"
+                            value={disputeNotes}
+                            onChange={e => setDisputeNotes(e.target.value)}
+                            placeholder="Dispute notes..."
+                            className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                            autoFocus
+                          />
+                          <button onClick={() => handleSaveDisputeNotes(t.id)}
+                            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium">Save</button>
+                          <button onClick={() => setEditingDispute(null)}
+                            className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-sm">Cancel</button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 mt-2">
+                          {t.disputeNotes && (
+                            <span className="text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
+                              Notes: {t.disputeNotes}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => { setEditingDispute(t.id); setDisputeNotes(t.disputeNotes || '') }}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            {t.disputeNotes ? 'Edit Notes' : 'Add Notes'}
+                          </button>
+                          <button
+                            onClick={() => handleResolveDispute(t, t.cn_sfxFinalAmount || t.sfx_cost)}
+                            className="text-xs text-green-600 hover:text-green-800 font-medium"
+                          >
+                            Resolve
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </main>
