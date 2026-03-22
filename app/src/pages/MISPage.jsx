@@ -9,6 +9,13 @@ import { reconcile, mergeCreditNoteData } from '../lib/misReconciler'
 
 const BATCH_SIZE = 450
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+const displayMonth = (ym) => {
+  if (!ym) return ''
+  const [y, m] = ym.split('-').map(Number)
+  return `${SHORT_MONTHS[m - 1]} ${y}`
+}
 
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0)
@@ -360,14 +367,17 @@ export default function MISPage() {
   const handleDeleteImport = async (imp) => {
     setDeleting(true)
     try {
-      const tripsQuery = query(collection(db, 'mis_trips'), where('month', '==', imp.month))
-      const snap = await getDocs(tripsQuery)
-      const refs = []
-      snap.forEach(d => refs.push(d.ref))
-      for (let i = 0; i < refs.length; i += BATCH_SIZE) {
-        const batch = writeBatch(db)
-        refs.slice(i, i + BATCH_SIZE).forEach(r => batch.delete(r))
-        await batch.commit()
+      // Only query mis_trips if month is defined
+      if (imp.month) {
+        const tripsQuery = query(collection(db, 'mis_trips'), where('month', '==', imp.month))
+        const snap = await getDocs(tripsQuery)
+        const refs = []
+        snap.forEach(d => refs.push(d.ref))
+        for (let i = 0; i < refs.length; i += BATCH_SIZE) {
+          const batch = writeBatch(db)
+          refs.slice(i, i + BATCH_SIZE).forEach(r => batch.delete(r))
+          await batch.commit()
+        }
       }
       await deleteDoc(doc(db, 'mis_imports', imp.id))
       setDeleteConfirm(null)
@@ -616,43 +626,6 @@ export default function MISPage() {
               )}
             </div>
 
-            {/* Upload Credit Note (optional) */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-1">
-                2. Upload Credit Note Summary (Optional)
-              </h3>
-              <p className="text-xs text-gray-400 mb-4">Can be uploaded later or updated when revised CN arrives</p>
-              <div className="flex flex-col sm:flex-row gap-3 items-start">
-                <label className="flex-1 cursor-pointer">
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
-                    <p className="text-sm text-gray-500">
-                      {cnFile ? cnFile.name : 'Drop or tap to select Credit Note Excel'}
-                    </p>
-                  </div>
-                  <input type="file" accept=".xlsx,.xls" onChange={handleCnFileChange} className="hidden" />
-                </label>
-              </div>
-
-              {cnParseResult && (
-                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
-                  <p className="font-medium text-blue-900">
-                    Found: {cnParseResult.summary.totalTrips} trips | Freight: {formatCurrency(cnParseResult.summary.totalFreightAmount)} | SFX Final: {formatCurrency(cnParseResult.summary.totalSfxFinalAmount)} | Diff: {formatCurrency(cnParseResult.summary.totalDiff)}
-                  </p>
-                </div>
-              )}
-
-              {/* If month already imported, show separate CN upload button */}
-              {monthImport && cnParseResult && !tripParseResult && (
-                <button
-                  onClick={handleUploadCreditNote}
-                  disabled={importing}
-                  className="mt-4 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium text-sm disabled:opacity-50"
-                >
-                  {importing ? 'Merging...' : 'Merge Credit Note into existing data'}
-                </button>
-              )}
-            </div>
-
             {/* Import button */}
             {tripParseResult && (
               <button
@@ -660,7 +633,7 @@ export default function MISPage() {
                 disabled={importing}
                 className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
               >
-                {importing ? 'Importing...' : `Import ${tripParseResult.summary.adhocCount + tripParseResult.summary.regularCount} trips for ${selectedMonth}`}
+                {importing ? 'Importing...' : `Import ${tripParseResult.summary.adhocCount + tripParseResult.summary.regularCount} trips for ${displayMonth(selectedMonth)}`}
                 {monthImport && ' (replaces existing)'}
               </button>
             )}
@@ -921,6 +894,42 @@ export default function MISPage() {
         {/* ════════════════════════════════════════════════════════════════ */}
         {activeTab === 'disputes' && (
           <div className="space-y-6">
+            {/* Upload Credit Note */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                Upload Credit Note Summary
+              </h3>
+              <p className="text-xs text-gray-400 mb-4">Upload when CN arrives from Shadowfax, or re-upload when revised CN comes</p>
+              <div className="flex flex-col sm:flex-row gap-3 items-start">
+                <label className="flex-1 cursor-pointer">
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
+                    <p className="text-sm text-gray-500">
+                      {cnFile ? cnFile.name : 'Drop or tap to select Credit Note Excel'}
+                    </p>
+                  </div>
+                  <input type="file" accept=".xlsx,.xls" onChange={handleCnFileChange} className="hidden" />
+                </label>
+              </div>
+
+              {cnParseResult && (
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                  <p className="font-medium text-blue-900">
+                    Found: {cnParseResult.summary.totalTrips} trips | Freight: {formatCurrency(cnParseResult.summary.totalFreightAmount)} | SFX Final: {formatCurrency(cnParseResult.summary.totalSfxFinalAmount)} | Diff: {formatCurrency(cnParseResult.summary.totalDiff)}
+                  </p>
+                </div>
+              )}
+
+              {monthImport && cnParseResult && (
+                <button
+                  onClick={handleUploadCreditNote}
+                  disabled={importing}
+                  className="mt-4 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium text-sm disabled:opacity-50"
+                >
+                  {importing ? 'Merging...' : 'Merge Credit Note into existing data'}
+                </button>
+              )}
+            </div>
+
             {/* Summary */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
