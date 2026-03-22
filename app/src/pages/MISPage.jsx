@@ -168,6 +168,19 @@ export default function MISPage() {
     try {
       const result = await parseTripDetailsExcel(f)
       setTripParseResult(result)
+      // Auto-detect month from parsed trip dates
+      const allTrips = [...(result.adhocTrips || []), ...(result.regularTrips || [])]
+      const dates = allTrips.map(t => t.sfx_date).filter(Boolean)
+      if (dates.length > 0) {
+        // Find most common YYYY-MM
+        const monthCounts = {}
+        dates.forEach(d => {
+          const ym = d.substring(0, 7)
+          monthCounts[ym] = (monthCounts[ym] || 0) + 1
+        })
+        const detectedMonth = Object.entries(monthCounts).sort((a, b) => b[1] - a[1])[0][0]
+        setSelectedMonth(detectedMonth)
+      }
     } catch (err) {
       setError(err.message)
     } finally {
