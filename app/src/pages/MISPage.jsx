@@ -909,7 +909,6 @@ export default function MISPage() {
                         <th className="px-3 py-2.5 font-medium">Origin → Dest</th>
                         <th className="px-3 py-2.5 font-medium text-right">MIS Amt</th>
                         <th className="px-3 py-2.5 font-medium text-right">OTD Amt</th>
-                        <th className="px-3 py-2.5 font-medium text-right">CN Diff</th>
                         <th className="px-3 py-2.5 font-medium w-20">Action</th>
                       </tr>
                     </thead>
@@ -928,9 +927,6 @@ export default function MISPage() {
                           </td>
                           <td className="px-3 py-2.5 text-right whitespace-nowrap">
                             {t.otd_bidAmount ? formatCurrency(t.otd_bidAmount) : '—'}
-                          </td>
-                          <td className={`px-3 py-2.5 text-right whitespace-nowrap ${t.cn_diff && t.cn_diff !== 0 ? 'text-red-600 font-medium' : ''}`}>
-                            {t.cn_diff != null ? formatCurrency(t.cn_diff) : '—'}
                           </td>
                           <td className="px-3 py-2.5">
                             {t.matchStatus !== 'matched' && t.matchStatus !== 'disputed' && (
