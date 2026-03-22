@@ -73,7 +73,7 @@ export default function MISPage() {
   // Regular Trips (lane contracts)
   const [regularTrips, setRegularTrips] = useState([])
   const [editingRegular, setEditingRegular] = useState(null) // null = list, 'new' = add, doc = edit
-  const [regularForm, setRegularForm] = useState({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', startDate: '', status: 'active' })
+  const [regularForm, setRegularForm] = useState({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
   const [selectedMonth, setSelectedMonth] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
 
   // Import state
@@ -90,6 +90,7 @@ export default function MISPage() {
   const [reconciling, setReconciling] = useState(false)
   const [reconStats, setReconStats] = useState(null)
   const [missingFromMis, setMissingFromMis] = useState([])
+  const [regularLaneSummary, setRegularLaneSummary] = useState([])
   const [statusFilter, setStatusFilter] = useState('all')
   const [tripTypeFilter, setTripTypeFilter] = useState('all') // all | adhoc | regular
 
@@ -425,10 +426,11 @@ export default function MISPage() {
 
       // Run reconciliation
       const tripsCopy = monthTrips.map(t => ({ ...t }))
-      const result = reconcile(tripsCopy, monthOtdTrips, bids)
+      const result = reconcile(tripsCopy, monthOtdTrips, bids, regularTrips)
 
       setReconStats(result.stats)
       setMissingFromMis(result.missingFromMis)
+      setRegularLaneSummary(result.regularLaneSummary || [])
 
       // Persist match results to Firestore
       for (const trip of result.misTrips) {
@@ -437,6 +439,7 @@ export default function MISPage() {
           otd_bidId: trip.otd_bidId || null,
           otd_bidAmount: trip.otd_bidAmount || null,
           otd_tripId: trip.otd_tripId || null,
+          otd_regularTripId: trip.otd_regularTripId || null,
           amountDifference: trip.amountDifference || null,
           reconciledAt: serverTimestamp(),
           reconciledBy: user.email,
@@ -512,7 +515,7 @@ export default function MISPage() {
   const VEHICLE_TYPES = ['Bolero', 'Tata Ace', 'Tata 407', '8 ft', '10 ft', '14 ft', '17 ft', '32 ft']
 
   const resetRegularForm = () => {
-    setRegularForm({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', startDate: '', status: 'active' })
+    setRegularForm({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
     setEditingRegular(null)
   }
 
@@ -528,7 +531,9 @@ export default function MISPage() {
         vehicleType: regularForm.vehicleType,
         cpkRate: parseFloat(regularForm.cpkRate) || 0,
         allottedKms: parseFloat(regularForm.allottedKms) || 0,
+        workingDays: parseInt(regularForm.workingDays) || 30,
         startDate: regularForm.startDate || null,
+        endDate: regularForm.endDate || null,
         status: regularForm.status,
         client: 'Shadowfax',
         updatedAt: serverTimestamp(),
@@ -564,7 +569,9 @@ export default function MISPage() {
       vehicleType: rt.vehicleType || 'Bolero',
       cpkRate: rt.cpkRate || '',
       allottedKms: rt.allottedKms || '',
+      workingDays: rt.workingDays || '30',
       startDate: rt.startDate || '',
+      endDate: rt.endDate || '',
       status: rt.status || 'active',
     })
   }
@@ -944,6 +951,80 @@ export default function MISPage() {
               )}
             </div>
 
+            {/* Regular Lane Summary */}
+            {regularLaneSummary.length > 0 && tripTypeFilter !== 'adhoc' && (
+              <div className="bg-white rounded-lg shadow-sm border border-blue-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-blue-200 bg-blue-50">
+                  <h3 className="text-sm font-semibold text-blue-800">
+                    Regular Lane Summary
+                  </h3>
+                  <p className="text-xs text-blue-600 mt-0.5">
+                    Trip count verification against lane contracts
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-left">
+                      <tr>
+                        <th className="px-3 py-2.5 font-medium">Lane</th>
+                        <th className="px-3 py-2.5 font-medium">Vehicle</th>
+                        <th className="px-3 py-2.5 font-medium text-right">Expected</th>
+                        <th className="px-3 py-2.5 font-medium text-right">Muneem</th>
+                        <th className="px-3 py-2.5 font-medium text-right">Diff</th>
+                        <th className="px-3 py-2.5 font-medium text-right">Est. Revenue</th>
+                        <th className="px-3 py-2.5 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {regularLaneSummary.map((lane, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-3 py-2.5 font-medium text-gray-900">{lane.lane}</td>
+                          <td className="px-3 py-2.5 text-gray-500 text-xs">{lane.vehicleNo}</td>
+                          <td className="px-3 py-2.5 text-right">{lane.expectedTrips}</td>
+                          <td className="px-3 py-2.5 text-right font-medium">{lane.actualTrips}</td>
+                          <td className={`px-3 py-2.5 text-right font-medium ${lane.missingTrips > 0 ? 'text-red-600' : lane.missingTrips < 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                            {lane.missingTrips > 0 ? `-${lane.missingTrips}` : lane.missingTrips < 0 ? `+${Math.abs(lane.missingTrips)}` : '0'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">{formatCurrency(lane.actualRevenue)}</td>
+                          <td className="px-3 py-2.5">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                              lane.status === 'match' ? 'bg-green-100 text-green-800' :
+                              lane.status === 'count_low' ? 'bg-red-100 text-red-800' :
+                              lane.status === 'count_high' ? 'bg-amber-100 text-amber-800' :
+                              lane.status === 'unrecognized' ? 'bg-purple-100 text-purple-800' :
+                              lane.status === 'no_data' ? 'bg-gray-100 text-gray-600' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {lane.status === 'match' ? 'Match' :
+                               lane.status === 'count_low' ? `${lane.missingTrips} missing` :
+                               lane.status === 'count_high' ? `${Math.abs(lane.missingTrips)} extra` :
+                               lane.status === 'unrecognized' ? 'Not in setup' :
+                               lane.status === 'no_data' ? 'No MIS data' :
+                               lane.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50 border-t-2 border-gray-300">
+                      <tr className="font-semibold text-gray-900">
+                        <td className="px-3 py-2.5" colSpan={2}>Total Regular</td>
+                        <td className="px-3 py-2.5 text-right">{regularLaneSummary.reduce((s, l) => s + l.expectedTrips, 0)}</td>
+                        <td className="px-3 py-2.5 text-right">{regularLaneSummary.reduce((s, l) => s + l.actualTrips, 0)}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          {regularLaneSummary.reduce((s, l) => s + l.missingTrips, 0)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          {formatCurrency(regularLaneSummary.reduce((s, l) => s + l.actualRevenue, 0))}
+                        </td>
+                        <td className="px-3 py-2.5"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Missing from MIS section */}
             {missingFromMis.length > 0 && (
               <div className="bg-white rounded-lg shadow-sm border border-orange-200 overflow-hidden">
@@ -1191,11 +1272,31 @@ export default function MISPage() {
                     />
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Working Days/Month</label>
+                    <input
+                      type="number"
+                      value={regularForm.workingDays}
+                      onChange={e => setRegularForm(f => ({ ...f, workingDays: e.target.value }))}
+                      placeholder="30"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
                     <input
                       type="date"
                       value={regularForm.startDate}
                       onChange={e => setRegularForm(f => ({ ...f, startDate: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={regularForm.endDate}
+                      onChange={e => setRegularForm(f => ({ ...f, endDate: e.target.value }))}
+                      placeholder="Leave blank if active"
                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -1249,9 +1350,11 @@ export default function MISPage() {
                         <th className="px-4 py-3 font-medium">Lane</th>
                         <th className="px-4 py-3 font-medium">Vehicle</th>
                         <th className="px-4 py-3 font-medium">Type</th>
-                        <th className="px-4 py-3 font-medium text-right">CPK Rate</th>
-                        <th className="px-4 py-3 font-medium text-right">Allotted KMs</th>
-                        <th className="px-4 py-3 font-medium">Start Date</th>
+                        <th className="px-4 py-3 font-medium text-right">CPK</th>
+                        <th className="px-4 py-3 font-medium text-right">KMs</th>
+                        <th className="px-4 py-3 font-medium text-right">Days</th>
+                        <th className="px-4 py-3 font-medium text-right">Est. Revenue</th>
+                        <th className="px-4 py-3 font-medium">Period</th>
                         <th className="px-4 py-3 font-medium">Status</th>
                         <th className="px-4 py-3 font-medium w-20">Actions</th>
                       </tr>
@@ -1264,7 +1367,13 @@ export default function MISPage() {
                           <td className="px-4 py-3 text-gray-500">{rt.vehicleType}</td>
                           <td className="px-4 py-3 text-right text-gray-900">{rt.cpkRate ? `₹${rt.cpkRate}` : '—'}</td>
                           <td className="px-4 py-3 text-right text-gray-900">{rt.allottedKms || '—'}</td>
-                          <td className="px-4 py-3 text-gray-500">{formatDate(rt.startDate)}</td>
+                          <td className="px-4 py-3 text-right text-gray-900">{rt.workingDays || 30}</td>
+                          <td className="px-4 py-3 text-right text-gray-900 font-medium">
+                            {rt.cpkRate && rt.allottedKms ? formatCurrency((rt.workingDays || 30) * rt.allottedKms * rt.cpkRate) : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">
+                            {formatDate(rt.startDate)}{rt.endDate ? ` → ${formatDate(rt.endDate)}` : ' → present'}
+                          </td>
                           <td className="px-4 py-3">
                             <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
                               rt.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'

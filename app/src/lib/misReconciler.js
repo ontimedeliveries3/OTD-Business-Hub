@@ -99,9 +99,8 @@ function matchAdhocByTripLogger(misTrips, otdTrips) {
   }
 }
 
-// ── Match Regular trips + unmatched Adhoc by date+vehicle ────────────────
-function matchByDateVehicle(misTrips, otdTrips) {
-  // Build lookup: date+vehicleNo → [trips]
+// ── Match unmatched Adhoc by date+vehicle against Trip Logger ─────────────
+function matchAdhocByDateVehicle(misTrips, otdTrips) {
   const tripsByDateVehicle = {}
   for (const t of otdTrips) {
     if (!t.date || !t.vehicle_no) continue
@@ -111,35 +110,27 @@ function matchByDateVehicle(misTrips, otdTrips) {
   }
 
   for (const trip of misTrips) {
-    // Skip already matched
     if (trip.matchStatus === 'matched' || trip.matchStatus === 'amount_mismatch') continue
-
+    if (trip.tripType !== 'adhoc') continue
     if (!trip.sfx_date || !trip.sfx_vehicleNo) continue
 
     const key = `${trip.sfx_date}|${trip.sfx_vehicleNo}`
     const candidates = tripsByDateVehicle[key]
-
     if (!candidates || candidates.length === 0) continue
 
-    // Find best match — prefer origin match, then amount match
     let bestMatch = null
     let bestScore = -1
-
     for (const c of candidates) {
-      let score = 1 // base score for date+vehicle match
+      let score = 1
       if (originsMatch(trip.sfx_origin, c.origin)) score += 2
       if (trip.sfx_cost && c.amount && amountsMatch(trip.sfx_cost, parseFloat(c.amount))) score += 1
-      if (score > bestScore) {
-        bestScore = score
-        bestMatch = c
-      }
+      if (score > bestScore) { bestScore = score; bestMatch = c }
     }
 
     if (bestMatch) {
       trip.otd_tripId = bestMatch.id
       const otdAmount = parseFloat(bestMatch.amount) || 0
-
-      if (trip.sfx_cost != null && otdAmount > 0) {
+      if (trip.sfx_cost && otdAmount > 0) {
         if (amountsMatch(trip.sfx_cost, otdAmount)) {
           trip.matchStatus = 'matched'
         } else {
@@ -147,11 +138,145 @@ function matchByDateVehicle(misTrips, otdTrips) {
           trip.amountDifference = (trip.sfx_cost || 0) - otdAmount
         }
       } else {
-        // Regular trips have no cost column — match by identity only
         trip.matchStatus = 'matched'
       }
     }
   }
+}
+
+// ── Normalize lane name for fuzzy matching ────────────────────────────────
+function normalizeLane(lane) {
+  if (!lane) return ''
+  return lane.toLowerCase()
+    .replace(/\s+dc/gi, '')
+    .replace(/[-–—]/g, '-')
+    .replace(/\s+/g, '')
+    .trim()
+}
+
+// ── Match Regular trips against Regular Trips (lane contracts) ────────────
+function matchRegularTrips(misTrips, regularTripsSetup) {
+  if (!regularTripsSetup || regularTripsSetup.length === 0) return
+
+  // Build lookup: normalized lane → contract(s)
+  const contractsByLane = {}
+  for (const rt of regularTripsSetup) {
+    if (rt.status !== 'active') continue
+    const key = normalizeLane(rt.lane)
+    if (!contractsByLane[key]) contractsByLane[key] = []
+    contractsByLane[key].push(rt)
+  }
+
+  for (const trip of misTrips) {
+    if (trip.tripType !== 'regular') continue
+    if (trip.matchStatus === 'disputed') continue
+
+    const lane = trip.sfx_lane || ''
+    const normalizedLane = normalizeLane(lane)
+
+    // Try to find matching contract
+    const contracts = contractsByLane[normalizedLane]
+    if (contracts && contracts.length > 0) {
+      // If vehicle matches one of the contracts, prefer that
+      const vehicleMatch = contracts.find(c =>
+        normalizeVehicleNo(c.vehicleNo) === trip.sfx_vehicleNo
+      )
+      const contract = vehicleMatch || contracts[0]
+      trip.otd_regularTripId = contract.id
+      trip.otd_regularLane = contract.lane
+      trip.matchStatus = 'matched'
+    }
+    // If no contract match, stays unmatched
+  }
+}
+
+// ── Build Regular lane-level summary for reconciliation ───────────────────
+export function buildRegularLaneSummary(misTrips, regularTripsSetup) {
+  // Group Regular MIS trips by lane
+  const misTripsByLane = {}
+  for (const trip of misTrips) {
+    if (trip.tripType !== 'regular') continue
+    const lane = trip.sfx_lane || 'Unknown'
+    if (!misTripsByLane[lane]) misTripsByLane[lane] = []
+    misTripsByLane[lane].push(trip)
+  }
+
+  const summary = []
+
+  // For each contract, find matching MIS trips
+  for (const contract of regularTripsSetup) {
+    if (contract.status !== 'active') continue
+
+    const normalizedContractLane = normalizeLane(contract.lane)
+    let matchedLane = null
+    let matchedTrips = []
+
+    // Find MIS lane that matches this contract
+    for (const [misLane, trips] of Object.entries(misTripsByLane)) {
+      if (normalizeLane(misLane) === normalizedContractLane) {
+        matchedLane = misLane
+        matchedTrips = trips
+        break
+      }
+    }
+
+    const expectedTrips = contract.workingDays || 30
+    const actualTrips = matchedTrips.length
+    const expectedRevenue = expectedTrips * (contract.allottedKms || 0) * (contract.cpkRate || 0)
+    const actualRevenue = actualTrips * (contract.allottedKms || 0) * (contract.cpkRate || 0)
+
+    // Check vehicle match
+    const vehiclesInMis = [...new Set(matchedTrips.map(t => t.sfx_vehicleNo).filter(Boolean))]
+    const vehicleMatch = vehiclesInMis.length === 0 || vehiclesInMis.includes(normalizeVehicleNo(contract.vehicleNo))
+
+    let status = 'match'
+    if (actualTrips === 0) status = 'no_data'
+    else if (actualTrips < expectedTrips) status = 'count_low'
+    else if (actualTrips > expectedTrips) status = 'count_high'
+    if (!vehicleMatch) status = 'vehicle_mismatch'
+
+    summary.push({
+      contractId: contract.id,
+      lane: contract.lane,
+      vehicleNo: contract.vehicleNo,
+      vehicleType: contract.vehicleType,
+      cpkRate: contract.cpkRate,
+      allottedKms: contract.allottedKms,
+      expectedTrips,
+      actualTrips,
+      expectedRevenue,
+      actualRevenue,
+      vehiclesInMis,
+      vehicleMatch,
+      status,
+      missingTrips: expectedTrips - actualTrips,
+    })
+
+    // Remove from unprocessed map
+    if (matchedLane) delete misTripsByLane[matchedLane]
+  }
+
+  // Any remaining MIS lanes not in contracts = unrecognized
+  for (const [lane, trips] of Object.entries(misTripsByLane)) {
+    summary.push({
+      contractId: null,
+      lane,
+      vehicleNo: trips[0]?.sfx_vehicleNo || '—',
+      vehicleType: '—',
+      cpkRate: 0,
+      allottedKms: 0,
+      expectedTrips: 0,
+      actualTrips: trips.length,
+      expectedRevenue: 0,
+      actualRevenue: 0,
+      vehiclesInMis: [...new Set(trips.map(t => t.sfx_vehicleNo).filter(Boolean))],
+      vehicleMatch: false,
+      status: 'unrecognized',
+      missingTrips: 0,
+    })
+  }
+
+  return summary
 }
 
 // ── Mark unmatched as missing_in_otd ────────────────────────────────────
@@ -221,7 +346,7 @@ export function mergeCreditNoteData(misTrips, cnTrips) {
 }
 
 // ── Main reconciliation function ────────────────────────────────────────
-export function reconcile(misTrips, otdTrips, bids) {
+export function reconcile(misTrips, otdTrips, bids, regularTripsSetup = []) {
   // Reset match status on all MIS trips
   for (const trip of misTrips) {
     if (trip.matchStatus !== 'disputed') {
@@ -229,6 +354,8 @@ export function reconcile(misTrips, otdTrips, bids) {
       trip.otd_bidId = trip.otd_bidId || null
       trip.otd_bidAmount = trip.otd_bidAmount || null
       trip.otd_tripId = trip.otd_tripId || null
+      trip.otd_regularTripId = null
+      trip.otd_regularLane = null
       trip.amountDifference = null
     }
   }
@@ -239,16 +366,25 @@ export function reconcile(misTrips, otdTrips, bids) {
   // Step 1b: Match adhoc by SFEC Request ID against Trip Logger
   matchAdhocByTripLogger(misTrips, otdTrips)
 
-  // Step 2: Match remaining by date + vehicle
-  matchByDateVehicle(misTrips, otdTrips)
+  // Step 2: Match unmatched adhoc by date + vehicle against Trip Logger
+  matchAdhocByDateVehicle(misTrips, otdTrips)
 
-  // Step 3: Mark unmatched
+  // Step 3: Match Regular trips against Regular Trips contracts (lane matching)
+  matchRegularTrips(misTrips, regularTripsSetup)
+
+  // Step 4: Mark unmatched
   markUnmatched(misTrips)
 
-  // Step 4: Find OTD trips missing from MIS
+  // Step 5: Find OTD trips missing from MIS (adhoc only — regular uses lane contracts)
   const missingFromMis = findMissingFromMis(misTrips, otdTrips)
 
+  // Step 6: Build Regular lane summary
+  const regularLaneSummary = buildRegularLaneSummary(misTrips, regularTripsSetup)
+
   // Compute stats
+  const adhocTrips = misTrips.filter(t => t.tripType === 'adhoc')
+  const regularMisTrips = misTrips.filter(t => t.tripType === 'regular')
+
   const stats = {
     total: misTrips.length,
     matched: misTrips.filter(t => t.matchStatus === 'matched').length,
@@ -256,11 +392,17 @@ export function reconcile(misTrips, otdTrips, bids) {
     unmatched: misTrips.filter(t => t.matchStatus === 'unmatched').length,
     disputed: misTrips.filter(t => t.matchStatus === 'disputed').length,
     missingFromMis: missingFromMis.length,
-    totalMisAmount: misTrips.reduce((s, t) => s + (t.sfx_cost || 0), 0),
-    totalOtdAmount: misTrips.reduce((s, t) => s + (t.otd_bidAmount || 0), 0),
-    totalDiff: misTrips.reduce((s, t) => s + (t.amountDifference || 0), 0),
+    totalMisAmount: adhocTrips.reduce((s, t) => s + (t.sfx_cost || 0), 0),
+    totalOtdAmount: adhocTrips.reduce((s, t) => s + (t.otd_bidAmount || 0), 0),
+    totalDiff: adhocTrips.reduce((s, t) => s + (t.amountDifference || 0), 0),
     totalCnDiff: misTrips.reduce((s, t) => s + (t.cn_diff || 0), 0),
+    // Regular stats
+    regularTotal: regularMisTrips.length,
+    regularMatched: regularMisTrips.filter(t => t.matchStatus === 'matched').length,
+    regularUnmatched: regularMisTrips.filter(t => t.matchStatus === 'unmatched').length,
+    regularExpectedRevenue: regularLaneSummary.reduce((s, l) => s + l.expectedRevenue, 0),
+    regularActualRevenue: regularLaneSummary.reduce((s, l) => s + l.actualRevenue, 0),
   }
 
-  return { misTrips, missingFromMis, stats }
+  return { misTrips, missingFromMis, stats, regularLaneSummary }
 }
