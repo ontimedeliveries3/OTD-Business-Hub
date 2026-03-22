@@ -159,7 +159,7 @@ function parseAdhocSheet(ws) {
 
 // ── Parse Regular sheet ─────────────────────────────────────────────────
 function parseRegularSheet(ws) {
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false })
   if (rows.length < 2) return []
 
   const headers = rows[0].map(h => String(h).trim().toLowerCase())

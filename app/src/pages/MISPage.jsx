@@ -168,8 +168,8 @@ export default function MISPage() {
     let filtered = monthTrips
     if (statusFilter !== 'all') filtered = filtered.filter(t => t.matchStatus === statusFilter)
     if (tripTypeFilter !== 'all') filtered = filtered.filter(t => t.tripType === tripTypeFilter)
-    // Sort by date descending (newest first)
-    return [...filtered].sort((a, b) => (b.sfx_date || '').localeCompare(a.sfx_date || ''))
+    // Sort by date ascending
+    return [...filtered].sort((a, b) => (a.sfx_date || '').localeCompare(b.sfx_date || ''))
   }, [monthTrips, statusFilter, tripTypeFilter])
 
   // Dispute trips
