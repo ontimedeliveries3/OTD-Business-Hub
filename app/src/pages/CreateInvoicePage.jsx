@@ -238,7 +238,7 @@ export default function CreateInvoicePage() {
         data.created_by = user.email
         await addDoc(collection(db, 'invoices'), data)
       }
-      navigate('/')
+      navigate('/invoices')
     } catch (err) {
       setError('Failed to save draft: ' + err.message)
     } finally {
@@ -311,7 +311,7 @@ export default function CreateInvoicePage() {
       a.click()
       URL.revokeObjectURL(url)
 
-      navigate('/')
+      navigate('/invoices')
     } catch (err) {
       setError('Failed to generate invoice: ' + err.message)
     } finally {
@@ -328,8 +328,8 @@ export default function CreateInvoicePage() {
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate('/')} className="text-gray-500 hover:text-gray-700 py-1">
-              &larr; Back
+            <button onClick={() => navigate('/invoices')} className="text-gray-500 hover:text-gray-700 py-1">
+              &larr; Invoices
             </button>
             <h1 className="text-lg sm:text-xl font-bold text-gray-900">
               {editId ? 'Edit Invoice' : 'Create Invoice'}

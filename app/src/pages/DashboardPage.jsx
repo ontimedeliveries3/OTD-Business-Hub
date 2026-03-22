@@ -164,26 +164,14 @@ export default function DashboardPage() {
                 </div>
               </button>
               <button
-                onClick={() => navigate('/invoice/new')}
+                onClick={() => navigate('/invoices')}
                 className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
               >
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">📄</span>
                   <div>
-                    <p className="font-medium text-gray-900 group-hover:text-blue-600">Create Invoice</p>
-                    <p className="text-sm text-gray-500">Generate a new invoice</p>
-                  </div>
-                </div>
-              </button>
-              <button
-                onClick={() => navigate('/invoices')}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">📋</span>
-                  <div>
-                    <p className="font-medium text-gray-900 group-hover:text-blue-600">Invoice Register</p>
-                    <p className="text-sm text-gray-500">View all invoices</p>
+                    <p className="font-medium text-gray-900 group-hover:text-blue-600">Invoices</p>
+                    <p className="text-sm text-gray-500">Create & manage invoices</p>
                   </div>
                 </div>
               </button>

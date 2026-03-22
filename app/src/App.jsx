@@ -40,7 +40,7 @@ function App() {
           }
         />
         <Route
-          path="/invoice/new"
+          path="/invoices/new"
           element={
             <ProtectedRoute>
               <CreateInvoicePage />
@@ -48,7 +48,7 @@ function App() {
           }
         />
         <Route
-          path="/invoice/:id/edit"
+          path="/invoices/:id/edit"
           element={
             <ProtectedRoute>
               <CreateInvoicePage />

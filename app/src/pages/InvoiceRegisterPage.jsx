@@ -203,7 +203,7 @@ export default function InvoiceRegisterPage() {
 
   const handleRowClick = (inv) => {
     if (inv.status === 'draft') {
-      navigate(`/invoice/${inv.id}/edit`)
+      navigate(`/invoices/${inv.id}/edit`)
     } else if (inv.pdf_url) {
       window.open(inv.pdf_url, '_blank')
     }
@@ -217,9 +217,15 @@ export default function InvoiceRegisterPage() {
             <button onClick={() => navigate('/')} className="text-gray-500 hover:text-gray-700">
               &larr; Dashboard
             </button>
-            <h1 className="text-xl font-bold text-gray-900">Invoice Register</h1>
+            <h1 className="text-xl font-bold text-gray-900">Invoices</h1>
           </div>
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate('/invoices/new')}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              + New Invoice
+            </button>
             <span className="text-sm text-gray-500 hidden sm:inline">{user.email}</span>
             <button
               onClick={logout}
