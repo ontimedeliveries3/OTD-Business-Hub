@@ -424,9 +424,15 @@ export default function MISPage() {
 
       const monthOtdTrips = otdTrips.filter(t => t.date >= startDate && t.date <= endDate)
 
+      // Re-fetch regular trips to ensure we have latest data
+      const freshRegularSnap = await getDocs(collection(db, 'regular_trips'))
+      const freshRegularTrips = []
+      freshRegularSnap.forEach(d => freshRegularTrips.push({ id: d.id, ...d.data() }))
+      setRegularTrips(freshRegularTrips)
+
       // Run reconciliation
       const tripsCopy = monthTrips.map(t => ({ ...t }))
-      const result = reconcile(tripsCopy, monthOtdTrips, bids, regularTrips, selectedMonth)
+      const result = reconcile(tripsCopy, monthOtdTrips, bids, freshRegularTrips, selectedMonth)
 
       setReconStats(result.stats)
       setMissingFromMis(result.missingFromMis)
