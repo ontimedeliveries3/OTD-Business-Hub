@@ -65,6 +65,40 @@ function matchAdhocTrips(misTrips, bids) {
   }
 }
 
+// ── Match Adhoc trips by SFEC Request ID against Trip Logger ────────────
+function matchAdhocByTripLogger(misTrips, otdTrips) {
+  // Build lookup: sfec_request_id → trip
+  const tripBySfec = {}
+  for (const t of otdTrips) {
+    if (t.sfec_request_id) {
+      tripBySfec[t.sfec_request_id] = t
+    }
+  }
+
+  for (const trip of misTrips) {
+    // Skip already matched or non-adhoc
+    if (trip.matchStatus === 'matched' || trip.matchStatus === 'amount_mismatch') continue
+    if (!trip.sfx_requestId) continue
+
+    const otdTrip = tripBySfec[trip.sfx_requestId]
+    if (otdTrip) {
+      trip.otd_tripId = otdTrip.id
+      const otdAmount = parseFloat(otdTrip.amount) || 0
+
+      if (trip.sfx_cost && otdAmount > 0) {
+        if (amountsMatch(trip.sfx_cost, otdAmount)) {
+          trip.matchStatus = 'matched'
+        } else {
+          trip.matchStatus = 'amount_mismatch'
+          trip.amountDifference = (trip.sfx_cost || 0) - otdAmount
+        }
+      } else {
+        trip.matchStatus = 'matched'
+      }
+    }
+  }
+}
+
 // ── Match Regular trips + unmatched Adhoc by date+vehicle ────────────────
 function matchByDateVehicle(misTrips, otdTrips) {
   // Build lookup: date+vehicleNo → [trips]
@@ -199,8 +233,11 @@ export function reconcile(misTrips, otdTrips, bids) {
     }
   }
 
-  // Step 1: Match adhoc by SFEC Request ID
+  // Step 1: Match adhoc by SFEC Request ID against Bid Tracker
   matchAdhocTrips(misTrips, bids)
+
+  // Step 1b: Match adhoc by SFEC Request ID against Trip Logger
+  matchAdhocByTripLogger(misTrips, otdTrips)
 
   // Step 2: Match remaining by date + vehicle
   matchByDateVehicle(misTrips, otdTrips)

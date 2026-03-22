@@ -52,6 +52,7 @@ export default function TripsPage() {
       destination: searchParams.get('destination') || '',
       vehicle_size: searchParams.get('vehicle_size') || '',
       amount: searchParams.get('amount') || '',
+      sfec_request_id: searchParams.get('sfec_request_id') || '',
     }
   }, [searchParams])
 

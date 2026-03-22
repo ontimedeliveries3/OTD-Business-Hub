@@ -631,6 +631,7 @@ export default function BidsPage() {
                                       destination: b.destination || b.touchPoints?.[0] || '',
                                       vehicle_size: b.vehicleSize || '',
                                       amount: String(b.allocationPrice || ''),
+                                      sfec_request_id: b.requestId || '',
                                     })
                                     navigate('/trips?' + params.toString())
                                   }}
