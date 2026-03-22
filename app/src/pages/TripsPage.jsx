@@ -682,15 +682,6 @@ export default function TripsPage() {
                     <option key={c.id} value={c.id}>{c.name || c.id}</option>
                   ))}
                 </select>
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="all">All Types</option>
-                  <option value="regular">Regular</option>
-                  <option value="adhoc">Adhoc</option>
-                </select>
                 <input
                   type="text"
                   placeholder="Search vehicle..."
@@ -727,7 +718,6 @@ export default function TripsPage() {
                         <th className="px-4 py-3 font-medium hidden sm:table-cell">Origin</th>
                         <th className="px-4 py-3 font-medium hidden sm:table-cell">Destination</th>
                         <th className="px-4 py-3 font-medium">Client</th>
-                        <th className="px-4 py-3 font-medium hidden lg:table-cell">Type</th>
                         <th className="px-4 py-3 font-medium text-right">Amount</th>
                         <th className="px-4 py-3 font-medium w-20"></th>
                       </tr>
@@ -742,13 +732,6 @@ export default function TripsPage() {
                           <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{t.origin || '\u2014'}</td>
                           <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{t.destination || '\u2014'}</td>
                           <td className="px-4 py-3 text-gray-500">{t.client_name || t.client_id || '\u2014'}</td>
-                          <td className="px-4 py-3 hidden lg:table-cell">
-                            <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${
-                              t.trip_type === 'regular' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-                            }`}>
-                              {t.trip_type === 'regular' ? 'Regular' : 'Adhoc'}
-                            </span>
-                          </td>
                           <td className="px-4 py-3 text-gray-900 font-medium text-right whitespace-nowrap">
                             {formatCurrency(t.amount || 0)}
                           </td>

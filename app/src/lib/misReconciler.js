@@ -156,6 +156,7 @@ function normalizeLane(lane) {
 
 // ── Match Regular trips against Regular Trips (lane contracts) ────────────
 function matchRegularTrips(misTrips, regularTripsSetup) {
+  console.log('[MIS Recon] matchRegularTrips called with', regularTripsSetup?.length, 'contracts')
   if (!regularTripsSetup || regularTripsSetup.length === 0) return
 
   // Build lookup: normalized lane → contract(s)
@@ -163,8 +164,16 @@ function matchRegularTrips(misTrips, regularTripsSetup) {
   for (const rt of regularTripsSetup) {
     if (rt.status !== 'active') continue
     const key = normalizeLane(rt.lane)
+    console.log('[MIS Recon] Contract:', rt.lane, '→ normalized:', key, '| status:', rt.status)
     if (!contractsByLane[key]) contractsByLane[key] = []
     contractsByLane[key].push(rt)
+  }
+
+  const regularMisTrips = misTrips.filter(t => t.tripType === 'regular')
+  console.log('[MIS Recon] Regular MIS trips to match:', regularMisTrips.length)
+  if (regularMisTrips.length > 0) {
+    const first = regularMisTrips[0]
+    console.log('[MIS Recon] First regular trip: sfx_lane=', JSON.stringify(first.sfx_lane), '| normalized:', normalizeLane(first.sfx_lane || ''))
   }
 
   for (const trip of misTrips) {
