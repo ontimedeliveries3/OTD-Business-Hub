@@ -190,8 +190,18 @@ function matchRegularTrips(misTrips, regularTripsSetup) {
   }
 }
 
-// ── Build Regular lane-level summary for reconciliation ───────────────────
-export function buildRegularLaneSummary(misTrips, regularTripsSetup) {
+// ── Build Regular lane-level summary with day-by-day attendance ───────────
+export function buildRegularLaneSummary(misTrips, regularTripsSetup, month) {
+  // Parse month to get all days
+  const [year, mon] = (month || '').split('-').map(Number)
+  const daysInMonth = year && mon ? new Date(year, mon, 0).getDate() : 31
+  const allDates = []
+  if (year && mon) {
+    for (let d = 1; d <= daysInMonth; d++) {
+      allDates.push(`${year}-${String(mon).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
+    }
+  }
+
   // Group Regular MIS trips by lane
   const misTripsByLane = {}
   for (const trip of misTrips) {
@@ -211,7 +221,6 @@ export function buildRegularLaneSummary(misTrips, regularTripsSetup) {
     let matchedLane = null
     let matchedTrips = []
 
-    // Find MIS lane that matches this contract
     for (const [misLane, trips] of Object.entries(misTripsByLane)) {
       if (normalizeLane(misLane) === normalizedContractLane) {
         matchedLane = misLane
@@ -220,12 +229,28 @@ export function buildRegularLaneSummary(misTrips, regularTripsSetup) {
       }
     }
 
+    // Build date attendance map: date → trip data (or null if missing)
+    const tripDatesSet = new Set(matchedTrips.map(t => t.sfx_date).filter(Boolean))
+    const tripByDate = {}
+    for (const t of matchedTrips) {
+      if (t.sfx_date) tripByDate[t.sfx_date] = t
+    }
+
+    const dateGrid = allDates.map(date => ({
+      date,
+      day: new Date(date).getDate(),
+      hasTrip: tripDatesSet.has(date),
+      tripId: tripByDate[date]?.sfx_tripId || null,
+      vehicleNo: tripByDate[date]?.sfx_vehicleNo || null,
+    }))
+
+    const missingDates = dateGrid.filter(d => !d.hasTrip).map(d => d.date)
+
     const expectedTrips = contract.workingDays || 30
     const actualTrips = matchedTrips.length
     const expectedRevenue = expectedTrips * (contract.allottedKms || 0) * (contract.cpkRate || 0)
     const actualRevenue = actualTrips * (contract.allottedKms || 0) * (contract.cpkRate || 0)
 
-    // Check vehicle match
     const vehiclesInMis = [...new Set(matchedTrips.map(t => t.sfx_vehicleNo).filter(Boolean))]
     const vehicleMatch = vehiclesInMis.length === 0 || vehiclesInMis.includes(normalizeVehicleNo(contract.vehicleNo))
 
@@ -250,29 +275,44 @@ export function buildRegularLaneSummary(misTrips, regularTripsSetup) {
       vehicleMatch,
       status,
       missingTrips: expectedTrips - actualTrips,
+      dateGrid,
+      missingDates,
+      daysInMonth,
     })
 
-    // Remove from unprocessed map
     if (matchedLane) delete misTripsByLane[matchedLane]
   }
 
-  // Any remaining MIS lanes not in contracts = unrecognized
+  // Unrecognized lanes
   for (const [lane, trips] of Object.entries(misTripsByLane)) {
+    const tripDatesSet = new Set(trips.map(t => t.sfx_date).filter(Boolean))
+    const tripByDate = {}
+    for (const t of trips) {
+      if (t.sfx_date) tripByDate[t.sfx_date] = t
+    }
+    const dateGrid = allDates.map(date => ({
+      date,
+      day: new Date(date).getDate(),
+      hasTrip: tripDatesSet.has(date),
+      tripId: tripByDate[date]?.sfx_tripId || null,
+      vehicleNo: tripByDate[date]?.sfx_vehicleNo || null,
+    }))
+
     summary.push({
       contractId: null,
       lane,
       vehicleNo: trips[0]?.sfx_vehicleNo || '—',
       vehicleType: '—',
-      cpkRate: 0,
-      allottedKms: 0,
-      expectedTrips: 0,
-      actualTrips: trips.length,
-      expectedRevenue: 0,
-      actualRevenue: 0,
+      cpkRate: 0, allottedKms: 0,
+      expectedTrips: 0, actualTrips: trips.length,
+      expectedRevenue: 0, actualRevenue: 0,
       vehiclesInMis: [...new Set(trips.map(t => t.sfx_vehicleNo).filter(Boolean))],
       vehicleMatch: false,
       status: 'unrecognized',
       missingTrips: 0,
+      dateGrid,
+      missingDates: [],
+      daysInMonth,
     })
   }
 
@@ -346,7 +386,7 @@ export function mergeCreditNoteData(misTrips, cnTrips) {
 }
 
 // ── Main reconciliation function ────────────────────────────────────────
-export function reconcile(misTrips, otdTrips, bids, regularTripsSetup = []) {
+export function reconcile(misTrips, otdTrips, bids, regularTripsSetup = [], month = '') {
   // Reset match status on all MIS trips
   for (const trip of misTrips) {
     if (trip.matchStatus !== 'disputed') {
@@ -379,7 +419,7 @@ export function reconcile(misTrips, otdTrips, bids, regularTripsSetup = []) {
   const missingFromMis = findMissingFromMis(misTrips, otdTrips)
 
   // Step 6: Build Regular lane summary
-  const regularLaneSummary = buildRegularLaneSummary(misTrips, regularTripsSetup)
+  const regularLaneSummary = buildRegularLaneSummary(misTrips, regularTripsSetup, month)
 
   // Compute stats
   const adhocTrips = misTrips.filter(t => t.tripType === 'adhoc')

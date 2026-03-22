@@ -91,6 +91,7 @@ export default function MISPage() {
   const [reconStats, setReconStats] = useState(null)
   const [missingFromMis, setMissingFromMis] = useState([])
   const [regularLaneSummary, setRegularLaneSummary] = useState([])
+  const [expandedLane, setExpandedLane] = useState(null) // contractId of expanded lane
   const [statusFilter, setStatusFilter] = useState('all')
   const [tripTypeFilter, setTripTypeFilter] = useState('all') // all | adhoc | regular
 
@@ -426,7 +427,7 @@ export default function MISPage() {
 
       // Run reconciliation
       const tripsCopy = monthTrips.map(t => ({ ...t }))
-      const result = reconcile(tripsCopy, monthOtdTrips, bids, regularTrips)
+      const result = reconcile(tripsCopy, monthOtdTrips, bids, regularTrips, selectedMonth)
 
       setReconStats(result.stats)
       setMissingFromMis(result.missingFromMis)
@@ -951,77 +952,109 @@ export default function MISPage() {
               )}
             </div>
 
-            {/* Regular Lane Summary */}
+            {/* Regular Lane Attendance Grid */}
             {regularLaneSummary.length > 0 && tripTypeFilter !== 'adhoc' && (
-              <div className="bg-white rounded-lg shadow-sm border border-blue-200 overflow-hidden">
-                <div className="px-4 py-3 border-b border-blue-200 bg-blue-50">
-                  <h3 className="text-sm font-semibold text-blue-800">
-                    Regular Lane Summary
+              <div className="space-y-4">
+                <div className="px-1">
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
+                    Regular Lanes — Attendance Register
                   </h3>
-                  <p className="text-xs text-blue-600 mt-0.5">
-                    Trip count verification against lane contracts
-                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">Tap a lane to see day-by-day trip attendance</p>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 text-gray-500 text-left">
-                      <tr>
-                        <th className="px-3 py-2.5 font-medium">Lane</th>
-                        <th className="px-3 py-2.5 font-medium">Vehicle</th>
-                        <th className="px-3 py-2.5 font-medium text-right">Expected</th>
-                        <th className="px-3 py-2.5 font-medium text-right">Muneem</th>
-                        <th className="px-3 py-2.5 font-medium text-right">Diff</th>
-                        <th className="px-3 py-2.5 font-medium text-right">Est. Revenue</th>
-                        <th className="px-3 py-2.5 font-medium">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {regularLaneSummary.map((lane, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-3 py-2.5 font-medium text-gray-900">{lane.lane}</td>
-                          <td className="px-3 py-2.5 text-gray-500 text-xs">{lane.vehicleNo}</td>
-                          <td className="px-3 py-2.5 text-right">{lane.expectedTrips}</td>
-                          <td className="px-3 py-2.5 text-right font-medium">{lane.actualTrips}</td>
-                          <td className={`px-3 py-2.5 text-right font-medium ${lane.missingTrips > 0 ? 'text-red-600' : lane.missingTrips < 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                            {lane.missingTrips > 0 ? `-${lane.missingTrips}` : lane.missingTrips < 0 ? `+${Math.abs(lane.missingTrips)}` : '0'}
-                          </td>
-                          <td className="px-3 py-2.5 text-right">{formatCurrency(lane.actualRevenue)}</td>
-                          <td className="px-3 py-2.5">
-                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                              lane.status === 'match' ? 'bg-green-100 text-green-800' :
-                              lane.status === 'count_low' ? 'bg-red-100 text-red-800' :
-                              lane.status === 'count_high' ? 'bg-amber-100 text-amber-800' :
-                              lane.status === 'unrecognized' ? 'bg-purple-100 text-purple-800' :
-                              lane.status === 'no_data' ? 'bg-gray-100 text-gray-600' :
-                              'bg-gray-100 text-gray-600'
-                            }`}>
-                              {lane.status === 'match' ? 'Match' :
-                               lane.status === 'count_low' ? `${lane.missingTrips} missing` :
-                               lane.status === 'count_high' ? `${Math.abs(lane.missingTrips)} extra` :
-                               lane.status === 'unrecognized' ? 'Not in setup' :
-                               lane.status === 'no_data' ? 'No MIS data' :
-                               lane.status}
+
+                {regularLaneSummary.map((lane, i) => {
+                  const isExpanded = expandedLane === (lane.contractId || lane.lane)
+                  const statusBadge = lane.status === 'match' ? { bg: 'bg-green-100 text-green-800', label: `${lane.actualTrips}/${lane.expectedTrips || lane.daysInMonth}` }
+                    : lane.status === 'count_low' ? { bg: 'bg-red-100 text-red-800', label: `${lane.actualTrips}/${lane.expectedTrips} (${lane.missingTrips} missing)` }
+                    : lane.status === 'count_high' ? { bg: 'bg-amber-100 text-amber-800', label: `${lane.actualTrips}/${lane.expectedTrips} (+${Math.abs(lane.missingTrips)})` }
+                    : lane.status === 'unrecognized' ? { bg: 'bg-purple-100 text-purple-800', label: `${lane.actualTrips} trips — Not in setup` }
+                    : { bg: 'bg-gray-100 text-gray-600', label: 'No data' }
+
+                  return (
+                    <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                      {/* Lane header — clickable */}
+                      <button
+                        onClick={() => setExpandedLane(isExpanded ? null : (lane.contractId || lane.lane))}
+                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 text-left">
+                          <span className="text-lg">{isExpanded ? '▾' : '▸'}</span>
+                          <div>
+                            <p className="font-medium text-gray-900 text-sm">{lane.lane}</p>
+                            <p className="text-xs text-gray-500">{lane.vehicleNo} · {lane.vehicleType}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {lane.cpkRate > 0 && (
+                            <span className="text-xs text-gray-500 hidden sm:inline">
+                              Est. {formatCurrency(lane.actualRevenue)}
                             </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50 border-t-2 border-gray-300">
-                      <tr className="font-semibold text-gray-900">
-                        <td className="px-3 py-2.5" colSpan={2}>Total Regular</td>
-                        <td className="px-3 py-2.5 text-right">{regularLaneSummary.reduce((s, l) => s + l.expectedTrips, 0)}</td>
-                        <td className="px-3 py-2.5 text-right">{regularLaneSummary.reduce((s, l) => s + l.actualTrips, 0)}</td>
-                        <td className="px-3 py-2.5 text-right">
-                          {regularLaneSummary.reduce((s, l) => s + l.missingTrips, 0)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          {formatCurrency(regularLaneSummary.reduce((s, l) => s + l.actualRevenue, 0))}
-                        </td>
-                        <td className="px-3 py-2.5"></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                          )}
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge.bg}`}>
+                            {statusBadge.label}
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* Expanded: date grid */}
+                      {isExpanded && lane.dateGrid && (
+                        <div className="border-t border-gray-200 px-4 py-3">
+                          <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+                            {/* Day headers */}
+                            {['S','M','T','W','T','F','S'].map((d, di) => (
+                              <div key={di} className="text-center text-xs font-medium text-gray-400 pb-1">{d}</div>
+                            ))}
+
+                            {/* Offset for first day of month */}
+                            {(() => {
+                              const firstDay = lane.dateGrid.length > 0 ? new Date(lane.dateGrid[0].date).getDay() : 0
+                              return Array.from({ length: firstDay }, (_, k) => (
+                                <div key={`pad-${k}`} />
+                              ))
+                            })()}
+
+                            {/* Date cells */}
+                            {lane.dateGrid.map(d => (
+                              <div
+                                key={d.date}
+                                className={`text-center py-1.5 rounded text-xs font-medium ${
+                                  d.hasTrip
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-red-50 text-red-600 border border-red-200'
+                                }`}
+                                title={d.hasTrip ? `Trip: ${d.tripId || 'yes'} (${d.vehicleNo || ''})` : `No trip on ${d.date}`}
+                              >
+                                {d.day}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Missing dates list */}
+                          {lane.missingDates.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-gray-100">
+                              <p className="text-xs font-medium text-red-700 mb-1">
+                                Missing dates ({lane.missingDates.length}):
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {lane.missingDates.map(date => (
+                                  <span key={date} className="text-xs bg-red-50 text-red-700 px-1.5 py-0.5 rounded border border-red-200">
+                                    {new Date(date).getDate()}/{new Date(date).getMonth() + 1}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {lane.cpkRate > 0 && (
+                            <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+                              {lane.actualTrips} trips × {lane.allottedKms} km × ₹{lane.cpkRate}/km = {formatCurrency(lane.actualRevenue)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
 
