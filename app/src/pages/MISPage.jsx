@@ -91,6 +91,7 @@ export default function MISPage() {
   const [reconStats, setReconStats] = useState(null)
   const [missingFromMis, setMissingFromMis] = useState([])
   const [statusFilter, setStatusFilter] = useState('all')
+  const [tripTypeFilter, setTripTypeFilter] = useState('all') // all | adhoc | regular
 
   // Dispute editing
   const [editingDispute, setEditingDispute] = useState(null)
@@ -162,9 +163,11 @@ export default function MISPage() {
 
   // Filtered trips for reconciliation view
   const filteredReconTrips = useMemo(() => {
-    if (statusFilter === 'all') return monthTrips
-    return monthTrips.filter(t => t.matchStatus === statusFilter)
-  }, [monthTrips, statusFilter])
+    let filtered = monthTrips
+    if (statusFilter !== 'all') filtered = filtered.filter(t => t.matchStatus === statusFilter)
+    if (tripTypeFilter !== 'all') filtered = filtered.filter(t => t.tripType === tripTypeFilter)
+    return filtered
+  }, [monthTrips, statusFilter, tripTypeFilter])
 
   // Dispute trips
   const disputeTrips = useMemo(() => {
@@ -844,6 +847,23 @@ export default function MISPage() {
                 </div>
               </div>
             )}
+
+            {/* Filter by trip type */}
+            <div className="flex gap-2 flex-wrap mb-2">
+              {['all', 'adhoc', 'regular'].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTripTypeFilter(t)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    tripTypeFilter === t
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {t === 'all' ? 'All Types' : t.charAt(0).toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
 
             {/* Filter by status */}
             <div className="flex gap-2 flex-wrap">
