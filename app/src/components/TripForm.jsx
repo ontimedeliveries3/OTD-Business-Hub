@@ -96,7 +96,6 @@ export default function TripForm({
       destination: form.destination,
       client_id: form.client_id,
       client_name: client?.name || form.client_id,
-      trip_type: form.trip_type,
       amount: parseFloat(form.amount) || 0,
       remarks: form.remarks.trim(),
     }
@@ -108,7 +107,6 @@ export default function TripForm({
         ...emptyTrip(),
         date: tripData.date,
         client_id: form.client_id,
-        trip_type: form.trip_type,
         vehicle_size: form.vehicle_size,
       })
       setErrors({})
@@ -218,17 +216,6 @@ export default function TripForm({
               {filteredVehicles.map(v => (
                 <option key={v.number} value={v.number}>{v.number}</option>
               ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelClass}>Type</label>
-            <select
-              value={form.trip_type}
-              onChange={(e) => updateField('trip_type', e.target.value)}
-              className={fieldClass('trip_type')}
-            >
-              <option value="regular">Regular</option>
-              <option value="adhoc">Adhoc</option>
             </select>
           </div>
           <div>
@@ -349,17 +336,6 @@ export default function TripForm({
               list={listId('driver')}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
-          </div>
-          <div>
-            <label className={labelClass}>Trip Type</label>
-            <select
-              value={form.trip_type}
-              onChange={(e) => updateField('trip_type', e.target.value)}
-              className={fieldClass('trip_type')}
-            >
-              <option value="regular">Regular</option>
-              <option value="adhoc">Adhoc</option>
-            </select>
           </div>
         </div>
 

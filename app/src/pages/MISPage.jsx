@@ -72,8 +72,6 @@ export default function MISPage() {
 
   // Regular Trips (lane contracts)
   const [regularTrips, setRegularTrips] = useState([])
-  const [editingRegular, setEditingRegular] = useState(null) // null = list, 'new' = add, doc = edit
-  const [regularForm, setRegularForm] = useState({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
   const [selectedMonth, setSelectedMonth] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
 
   // Import state
@@ -512,72 +510,6 @@ export default function MISPage() {
   // RENDER
   // ══════════════════════════════════════════════════════════════════════
 
-  // ══════════════════════════════════════════════════════════════════════
-  // REGULAR TRIPS CRUD
-  const VEHICLE_TYPES = ['Bolero', 'Tata Ace', 'Tata 407', '8 ft', '10 ft', '14 ft', '17 ft', '32 ft']
-
-  const resetRegularForm = () => {
-    setRegularForm({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
-    setEditingRegular(null)
-  }
-
-  const handleSaveRegular = async () => {
-    if (!regularForm.lane || !regularForm.vehicleNo) {
-      setError('Lane name and vehicle number are required.')
-      return
-    }
-    try {
-      const data = {
-        lane: regularForm.lane.trim(),
-        vehicleNo: regularForm.vehicleNo.trim().toUpperCase().replace(/\s+/g, ''),
-        vehicleType: regularForm.vehicleType,
-        cpkRate: parseFloat(regularForm.cpkRate) || 0,
-        allottedKms: parseFloat(regularForm.allottedKms) || 0,
-        workingDays: parseInt(regularForm.workingDays) || 30,
-        startDate: regularForm.startDate || null,
-        endDate: regularForm.endDate || null,
-        status: regularForm.status,
-        client: 'Shadowfax',
-        updatedAt: serverTimestamp(),
-      }
-      if (editingRegular && editingRegular !== 'new') {
-        await updateDoc(doc(db, 'regular_trips', editingRegular.id), data)
-      } else {
-        data.createdAt = serverTimestamp()
-        await addDoc(collection(db, 'regular_trips'), data)
-      }
-      resetRegularForm()
-      await loadData()
-      setSuccess('Regular trip saved.')
-    } catch (err) {
-      setError('Failed to save: ' + err.message)
-    }
-  }
-
-  const handleDeleteRegular = async (id) => {
-    try {
-      await deleteDoc(doc(db, 'regular_trips', id))
-      await loadData()
-    } catch (err) {
-      setError('Failed to delete: ' + err.message)
-    }
-  }
-
-  const handleEditRegular = (rt) => {
-    setEditingRegular(rt)
-    setRegularForm({
-      lane: rt.lane || '',
-      vehicleNo: rt.vehicleNo || '',
-      vehicleType: rt.vehicleType || 'Bolero',
-      cpkRate: rt.cpkRate || '',
-      allottedKms: rt.allottedKms || '',
-      workingDays: rt.workingDays || '30',
-      startDate: rt.startDate || '',
-      endDate: rt.endDate || '',
-      status: rt.status || 'active',
-    })
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-3">
@@ -650,7 +582,6 @@ export default function MISPage() {
             { key: 'import', label: 'Import' },
             { key: 'reconciliation', label: 'Reconciliation' },
             { key: 'disputes', label: `Disputes (${disputeTrips.length})` },
-            { key: 'regular_trips', label: `Regular Trips (${regularTrips.length})` },
           ].map(tab => (
             <button
               key={tab.key}
@@ -1239,10 +1170,7 @@ export default function MISPage() {
             </div>
           </div>
         )}
-        {/* ════════════════════════════════════════════════════════════════ */}
-        {/* REGULAR TRIPS TAB */}
-        {/* ════════════════════════════════════════════════════════════════ */}
-        {activeTab === 'regular_trips' && (
+        {false && (
           <div className="space-y-6">
             {/* Add/Edit form */}
             {editingRegular !== null ? (

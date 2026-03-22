@@ -46,7 +46,6 @@ export default function TripEditModal({ trip, clients, vehicles = [], locations 
               origin: trip.origin || '',
               destination: trip.destination || '',
               client_id: trip.client_id || '',
-              trip_type: trip.trip_type || 'regular',
               amount: trip.amount || '',
               remarks: trip.remarks || '',
             }}

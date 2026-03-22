@@ -76,7 +76,11 @@ export default function TripsPage() {
   const [dateTo, setDateTo] = useState('')
   const [clientFilter, setClientFilter] = useState('all')
   const [vehicleSearch, setVehicleSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState('all')
+  // Regular Trips (lane contracts)
+  const [regularTrips, setRegularTrips] = useState([])
+  const [editingRegular, setEditingRegular] = useState(null)
+  const [regularForm, setRegularForm] = useState({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
+  const [logSubTab, setLogSubTab] = useState('adhoc') // adhoc | regular
 
   // Edit & Delete
   const [editingTrip, setEditingTrip] = useState(null)
@@ -90,11 +94,12 @@ export default function TripsPage() {
     async function loadData() {
       try {
         setError(null)
-        const [tripsSnap, clientsSnap, vehiclesSnap, locationsSnap] = await Promise.all([
+        const [tripsSnap, clientsSnap, vehiclesSnap, locationsSnap, regularTripsSnap] = await Promise.all([
           getDocs(collection(db, 'trips')),
           getDocs(collection(db, 'clients')),
           getDocs(collection(db, 'vehicles')),
           getDocs(collection(db, 'locations')),
+          getDocs(collection(db, 'regular_trips')),
         ])
 
         const tripsList = []
@@ -138,6 +143,10 @@ export default function TripsPage() {
         setClients(clientsList)
         setVehicles(vehiclesList.filter(v => v.active !== false))
         setLocations(locationsList.filter(l => l.active !== false))
+
+        const regularList = []
+        regularTripsSnap.forEach(d => regularList.push({ id: d.id, ...d.data() }))
+        setRegularTrips(regularList)
       } catch (err) {
         console.error('Failed to load trips:', err)
         setError('Failed to load data: ' + err.message)
@@ -170,14 +179,13 @@ export default function TripsPage() {
       if (dateFrom && t.date < dateFrom) return false
       if (dateTo && t.date > dateTo) return false
       if (clientFilter !== 'all' && t.client_id !== clientFilter) return false
-      if (typeFilter !== 'all' && t.trip_type !== typeFilter) return false
       if (vehicleSearch) {
         const q = vehicleSearch.toUpperCase()
         if (!(t.vehicle_no || '').toUpperCase().includes(q)) return false
       }
       return true
     })
-  }, [trips, dateFrom, dateTo, clientFilter, vehicleSearch, typeFilter])
+  }, [trips, dateFrom, dateTo, clientFilter, vehicleSearch])
 
   const stats = useMemo(() => {
     let totalAmount = 0
@@ -263,6 +271,76 @@ export default function TripsPage() {
     } finally {
       setDeleting(false)
     }
+  }
+
+  // ── Regular Trips CRUD ─────────────────────────────────────────────────
+  const VEHICLE_TYPES = ['Bolero', 'Tata Ace', 'Tata 407', '8 ft', '10 ft', '14 ft', '17 ft', '32 ft']
+
+  const resetRegularForm = () => {
+    setRegularForm({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
+    setEditingRegular(null)
+  }
+
+  const handleSaveRegular = async () => {
+    if (!regularForm.lane || !regularForm.vehicleNo) {
+      setError('Lane name and vehicle number are required.')
+      return
+    }
+    try {
+      const data = {
+        lane: regularForm.lane.trim(),
+        vehicleNo: regularForm.vehicleNo.trim().toUpperCase().replace(/\s+/g, ''),
+        vehicleType: regularForm.vehicleType,
+        cpkRate: parseFloat(regularForm.cpkRate) || 0,
+        allottedKms: parseFloat(regularForm.allottedKms) || 0,
+        workingDays: parseInt(regularForm.workingDays) || 30,
+        startDate: regularForm.startDate || null,
+        endDate: regularForm.endDate || null,
+        status: regularForm.status,
+        client: 'Shadowfax',
+        updatedAt: serverTimestamp(),
+      }
+      if (editingRegular && editingRegular !== 'new') {
+        await updateDoc(doc(db, 'regular_trips', editingRegular.id), data)
+      } else {
+        data.createdAt = serverTimestamp()
+        await addDoc(collection(db, 'regular_trips'), data)
+      }
+      resetRegularForm()
+      // Reload regular trips
+      const snap = await getDocs(collection(db, 'regular_trips'))
+      const list = []
+      snap.forEach(d => list.push({ id: d.id, ...d.data() }))
+      setRegularTrips(list)
+      showToast('Regular trip saved.')
+    } catch (err) {
+      setError('Failed to save: ' + err.message)
+    }
+  }
+
+  const handleDeleteRegular = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'regular_trips', id))
+      setRegularTrips(prev => prev.filter(r => r.id !== id))
+      showToast('Regular trip deleted.')
+    } catch (err) {
+      setError('Failed to delete: ' + err.message)
+    }
+  }
+
+  const handleEditRegular = (rt) => {
+    setEditingRegular(rt)
+    setRegularForm({
+      lane: rt.lane || '',
+      vehicleNo: rt.vehicleNo || '',
+      vehicleType: rt.vehicleType || 'Bolero',
+      cpkRate: rt.cpkRate || '',
+      allottedKms: rt.allottedKms || '',
+      workingDays: rt.workingDays || '30',
+      startDate: rt.startDate || '',
+      endDate: rt.endDate || '',
+      status: rt.status || 'active',
+    })
   }
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -383,6 +461,24 @@ export default function TripsPage() {
 
         {/* ── LOG TAB ─────────────────────────────────────────────────── */}
         {activeTab === 'log' && (
+          <>
+            {/* Sub-tabs: Adhoc | Regular */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setLogSubTab('adhoc')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  logSubTab === 'adhoc' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >Adhoc</button>
+              <button
+                onClick={() => setLogSubTab('regular')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  logSubTab === 'regular' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >Regular ({regularTrips.length})</button>
+            </div>
+
+            {logSubTab === 'adhoc' && (
           <TripForm
             clients={clients}
             vehicles={vehicles}
@@ -402,11 +498,142 @@ export default function TripsPage() {
               origin: bidPrefill.origin,
               destination: bidPrefill.destination,
               client_id: bidPrefill.client_id,
-              trip_type: 'regular',
               amount: bidPrefill.amount,
               remarks: '',
             } : undefined}
           />
+            )}
+
+            {logSubTab === 'regular' && (
+              <div className="space-y-6">
+                {/* Add/Edit form */}
+                {editingRegular !== null ? (
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">
+                      {editingRegular === 'new' ? 'Add Regular Trip' : 'Edit Regular Trip'}
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Lane Name</label>
+                        <input type="text" value={regularForm.lane} onChange={e => setRegularForm(f => ({ ...f, lane: e.target.value }))}
+                          placeholder="e.g. Patna DC-Sonho DC" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number</label>
+                        <input type="text" value={regularForm.vehicleNo} onChange={e => setRegularForm(f => ({ ...f, vehicleNo: e.target.value }))}
+                          placeholder="e.g. BR11GF7516" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
+                        <select value={regularForm.vehicleType} onChange={e => setRegularForm(f => ({ ...f, vehicleType: e.target.value }))}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                          {VEHICLE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">CPK Rate (₹/km)</label>
+                        <input type="number" value={regularForm.cpkRate} onChange={e => setRegularForm(f => ({ ...f, cpkRate: e.target.value }))}
+                          placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Allotted KMs (per trip)</label>
+                        <input type="number" value={regularForm.allottedKms} onChange={e => setRegularForm(f => ({ ...f, allottedKms: e.target.value }))}
+                          placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Working Days/Month</label>
+                        <input type="number" value={regularForm.workingDays} onChange={e => setRegularForm(f => ({ ...f, workingDays: e.target.value }))}
+                          placeholder="30" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                        <input type="date" value={regularForm.startDate} onChange={e => setRegularForm(f => ({ ...f, startDate: e.target.value }))}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                        <input type="date" value={regularForm.endDate} onChange={e => setRegularForm(f => ({ ...f, endDate: e.target.value }))}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                        <select value={regularForm.status} onChange={e => setRegularForm(f => ({ ...f, status: e.target.value }))}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex gap-3 mt-4">
+                      <button onClick={handleSaveRegular} className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">Save</button>
+                      <button onClick={resetRegularForm} className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setEditingRegular('new')} className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">
+                    + Add Regular Trip
+                  </button>
+                )}
+
+                {/* Regular Trips List */}
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                  {regularTrips.length === 0 ? (
+                    <div className="px-6 py-8 text-center text-gray-500 text-sm">
+                      No regular trips configured. Add your standing CPK lane contracts here.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 text-gray-500 text-left">
+                          <tr>
+                            <th className="px-4 py-3 font-medium">Lane</th>
+                            <th className="px-4 py-3 font-medium">Vehicle</th>
+                            <th className="px-4 py-3 font-medium">Type</th>
+                            <th className="px-4 py-3 font-medium text-right">CPK</th>
+                            <th className="px-4 py-3 font-medium text-right">KMs</th>
+                            <th className="px-4 py-3 font-medium text-right">Days</th>
+                            <th className="px-4 py-3 font-medium text-right">Est. Revenue</th>
+                            <th className="px-4 py-3 font-medium">Period</th>
+                            <th className="px-4 py-3 font-medium">Status</th>
+                            <th className="px-4 py-3 font-medium w-20">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {regularTrips.map(rt => (
+                            <tr key={rt.id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 font-medium text-gray-900">{rt.lane}</td>
+                              <td className="px-4 py-3 text-gray-500">{rt.vehicleNo}</td>
+                              <td className="px-4 py-3 text-gray-500">{rt.vehicleType}</td>
+                              <td className="px-4 py-3 text-right text-gray-900">{rt.cpkRate ? `₹${rt.cpkRate}` : '—'}</td>
+                              <td className="px-4 py-3 text-right text-gray-900">{rt.allottedKms || '—'}</td>
+                              <td className="px-4 py-3 text-right text-gray-900">{rt.workingDays || 30}</td>
+                              <td className="px-4 py-3 text-right text-gray-900 font-medium">
+                                {rt.cpkRate && rt.allottedKms ? formatCurrency((rt.workingDays || 30) * rt.allottedKms * rt.cpkRate) : '—'}
+                              </td>
+                              <td className="px-4 py-3 text-gray-500 text-xs">
+                                {formatDate(rt.startDate)}{rt.endDate ? ` → ${formatDate(rt.endDate)}` : ' → present'}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  rt.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                }`}>{rt.status}</span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex gap-2">
+                                  <button onClick={() => handleEditRegular(rt)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</button>
+                                  <button onClick={() => handleDeleteRegular(rt.id)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* ── VIEW TAB ────────────────────────────────────────────────── */}

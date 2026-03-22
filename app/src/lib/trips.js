@@ -8,7 +8,6 @@ export const emptyTrip = () => ({
   origin: '',
   destination: '',
   client_id: '',
-  trip_type: 'regular',
   amount: '',
   remarks: '',
 })
