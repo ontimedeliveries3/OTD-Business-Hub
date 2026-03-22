@@ -168,7 +168,8 @@ export default function MISPage() {
     let filtered = monthTrips
     if (statusFilter !== 'all') filtered = filtered.filter(t => t.matchStatus === statusFilter)
     if (tripTypeFilter !== 'all') filtered = filtered.filter(t => t.tripType === tripTypeFilter)
-    return filtered
+    // Sort by date descending (newest first)
+    return [...filtered].sort((a, b) => (b.sfx_date || '').localeCompare(a.sfx_date || ''))
   }, [monthTrips, statusFilter, tripTypeFilter])
 
   // Dispute trips
@@ -1038,7 +1039,7 @@ export default function MISPage() {
                               <div className="flex flex-wrap gap-1">
                                 {lane.missingDates.map(date => (
                                   <span key={date} className="text-xs bg-red-50 text-red-700 px-1.5 py-0.5 rounded border border-red-200">
-                                    {new Date(date).getDate()}/{new Date(date).getMonth() + 1}
+                                    {formatDate(date)}
                                   </span>
                                 ))}
                               </div>
