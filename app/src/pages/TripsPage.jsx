@@ -81,6 +81,7 @@ export default function TripsPage() {
   const [editingRegular, setEditingRegular] = useState(null)
   const [regularForm, setRegularForm] = useState({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
   const [logSubTab, setLogSubTab] = useState('adhoc') // adhoc | regular
+  const [viewSubTab, setViewSubTab] = useState('adhoc') // adhoc | regular
 
   // Edit & Delete
   const [editingTrip, setEditingTrip] = useState(null)
@@ -574,63 +575,6 @@ export default function TripsPage() {
                     + Add Regular Trip
                   </button>
                 )}
-
-                {/* Regular Trips List */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                  {regularTrips.length === 0 ? (
-                    <div className="px-6 py-8 text-center text-gray-500 text-sm">
-                      No regular trips configured. Add your standing CPK lane contracts here.
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50 text-gray-500 text-left">
-                          <tr>
-                            <th className="px-4 py-3 font-medium">Lane</th>
-                            <th className="px-4 py-3 font-medium">Vehicle</th>
-                            <th className="px-4 py-3 font-medium">Type</th>
-                            <th className="px-4 py-3 font-medium text-right">CPK</th>
-                            <th className="px-4 py-3 font-medium text-right">KMs</th>
-                            <th className="px-4 py-3 font-medium text-right">Days</th>
-                            <th className="px-4 py-3 font-medium text-right">Est. Revenue</th>
-                            <th className="px-4 py-3 font-medium">Period</th>
-                            <th className="px-4 py-3 font-medium">Status</th>
-                            <th className="px-4 py-3 font-medium w-20">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {regularTrips.map(rt => (
-                            <tr key={rt.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 font-medium text-gray-900">{rt.lane}</td>
-                              <td className="px-4 py-3 text-gray-500">{rt.vehicleNo}</td>
-                              <td className="px-4 py-3 text-gray-500">{rt.vehicleType}</td>
-                              <td className="px-4 py-3 text-right text-gray-900">{rt.cpkRate ? `₹${rt.cpkRate}` : '—'}</td>
-                              <td className="px-4 py-3 text-right text-gray-900">{rt.allottedKms || '—'}</td>
-                              <td className="px-4 py-3 text-right text-gray-900">{rt.workingDays || 30}</td>
-                              <td className="px-4 py-3 text-right text-gray-900 font-medium">
-                                {rt.cpkRate && rt.allottedKms ? formatCurrency((rt.workingDays || 30) * rt.allottedKms * rt.cpkRate) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-gray-500 text-xs">
-                                {formatDate(rt.startDate)}{rt.endDate ? ` → ${formatDate(rt.endDate)}` : ' → present'}
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                                  rt.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                                }`}>{rt.status}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex gap-2">
-                                  <button onClick={() => handleEditRegular(rt)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</button>
-                                  <button onClick={() => handleDeleteRegular(rt.id)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
           </>
@@ -639,6 +583,24 @@ export default function TripsPage() {
         {/* ── VIEW TAB ────────────────────────────────────────────────── */}
         {activeTab === 'view' && (
           <>
+            {/* Sub-tabs: Adhoc | Regular */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setViewSubTab('adhoc')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  viewSubTab === 'adhoc' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >Adhoc ({trips.length})</button>
+              <button
+                onClick={() => setViewSubTab('regular')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  viewSubTab === 'regular' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >Regular ({regularTrips.length})</button>
+            </div>
+
+            {viewSubTab === 'adhoc' && (
+            <>
             {/* Summary Stats */}
             <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -769,6 +731,66 @@ export default function TripsPage() {
                 </div>
               )}
             </div>
+            </>
+            )}
+
+            {viewSubTab === 'regular' && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                {regularTrips.length === 0 ? (
+                  <div className="px-6 py-8 text-center text-gray-500 text-sm">
+                    No regular lanes configured. Go to Log Trip → Regular to add one.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-gray-500 text-left">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Lane</th>
+                          <th className="px-4 py-3 font-medium">Vehicle</th>
+                          <th className="px-4 py-3 font-medium">Type</th>
+                          <th className="px-4 py-3 font-medium text-right">CPK</th>
+                          <th className="px-4 py-3 font-medium text-right">KMs</th>
+                          <th className="px-4 py-3 font-medium text-right">Days</th>
+                          <th className="px-4 py-3 font-medium text-right">Est. Revenue</th>
+                          <th className="px-4 py-3 font-medium">Period</th>
+                          <th className="px-4 py-3 font-medium">Status</th>
+                          <th className="px-4 py-3 font-medium w-20">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {regularTrips.map(rt => (
+                          <tr key={rt.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium text-gray-900">{rt.lane}</td>
+                            <td className="px-4 py-3 text-gray-500">{rt.vehicleNo}</td>
+                            <td className="px-4 py-3 text-gray-500">{rt.vehicleType}</td>
+                            <td className="px-4 py-3 text-right text-gray-900">{rt.cpkRate ? `₹${rt.cpkRate}` : '—'}</td>
+                            <td className="px-4 py-3 text-right text-gray-900">{rt.allottedKms || '—'}</td>
+                            <td className="px-4 py-3 text-right text-gray-900">{rt.workingDays || 30}</td>
+                            <td className="px-4 py-3 text-right text-gray-900 font-medium">
+                              {rt.cpkRate && rt.allottedKms ? formatCurrency((rt.workingDays || 30) * rt.allottedKms * rt.cpkRate) : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-gray-500 text-xs">
+                              {formatDate(rt.startDate)}{rt.endDate ? ` → ${formatDate(rt.endDate)}` : ' → present'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                                rt.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                              }`}>{rt.status}</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex gap-2">
+                                <button onClick={() => { handleEditRegular(rt); setActiveTab('log'); setLogSubTab('regular') }} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</button>
+                                <button onClick={() => handleDeleteRegular(rt.id)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </main>
