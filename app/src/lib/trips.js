@@ -10,4 +10,5 @@ export const emptyTrip = () => ({
   client_id: '',
   amount: '',
   remarks: '',
+  sfec_request_id: '',
 })

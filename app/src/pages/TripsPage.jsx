@@ -501,6 +501,7 @@ export default function TripsPage() {
               client_id: bidPrefill.client_id,
               amount: bidPrefill.amount,
               remarks: '',
+              sfec_request_id: bidPrefill.sfec_request_id,
             } : undefined}
           />
             )}

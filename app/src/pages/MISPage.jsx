@@ -156,11 +156,6 @@ export default function MISPage() {
   }, [misImports, selectedMonth])
 
   // Available months (from imports)
-  const availableMonths = useMemo(() => {
-    const set = new Set(misImports.map(i => i.month).filter(Boolean))
-    return [...set].sort().reverse()
-  }, [misImports])
-
   // Filtered trips for reconciliation view
   const filteredReconTrips = useMemo(() => {
     let filtered = monthTrips

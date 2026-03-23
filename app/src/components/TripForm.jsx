@@ -98,6 +98,7 @@ export default function TripForm({
       client_name: client?.name || form.client_id,
       amount: parseFloat(form.amount) || 0,
       remarks: form.remarks.trim(),
+      sfec_request_id: form.sfec_request_id || '',
     }
 
     onSave?.(tripData)

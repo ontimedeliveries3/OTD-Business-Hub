@@ -228,12 +228,15 @@ export default function BidsPage() {
   const handleClearAll = async () => {
     setClearingAll(true)
     try {
-      const batch = writeBatch(db)
-      bids.forEach(b => batch.delete(doc(db, 'bids', b.id)))
-      await batch.commit()
+      const ids = bids.map(b => b.id)
+      for (let i = 0; i < ids.length; i += 450) {
+        const batch = writeBatch(db)
+        ids.slice(i, i + 450).forEach(id => batch.delete(doc(db, 'bids', id)))
+        await batch.commit()
+      }
       setBids([])
       setClearAllConfirm(false)
-      showToast(`Cleared ${bids.length} bids.`)
+      showToast(`Cleared ${ids.length} bids.`)
     } catch (err) {
       console.error('Failed to clear bids:', err)
       setError('Failed to clear: ' + err.message)
