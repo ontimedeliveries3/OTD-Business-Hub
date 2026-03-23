@@ -78,7 +78,7 @@ export default function TripsPage() {
   const [vehicleSearch, setVehicleSearch] = useState('')
   // Regular Trips (lane contracts)
   const [regularTrips, setRegularTrips] = useState([])
-  const [editingRegular, setEditingRegular] = useState(null)
+  const [editingRegular, setEditingRegular] = useState('new')
   const [regularForm, setRegularForm] = useState({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
   const [logSubTab, setLogSubTab] = useState('adhoc') // adhoc | regular
   const [viewSubTab, setViewSubTab] = useState('adhoc') // adhoc | regular
@@ -279,7 +279,7 @@ export default function TripsPage() {
 
   const resetRegularForm = () => {
     setRegularForm({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
-    setEditingRegular(null)
+    setEditingRegular('new')
   }
 
   const handleSaveRegular = async () => {
@@ -472,7 +472,7 @@ export default function TripsPage() {
                 }`}
               >Adhoc</button>
               <button
-                onClick={() => setLogSubTab('regular')}
+                onClick={() => { setLogSubTab('regular'); if (!editingRegular) setEditingRegular('new') }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   logSubTab === 'regular' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
@@ -506,75 +506,70 @@ export default function TripsPage() {
             )}
 
             {logSubTab === 'regular' && (
-              <div className="space-y-6">
-                {/* Add/Edit form */}
-                {editingRegular !== null ? (
-                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">
-                      {editingRegular === 'new' ? 'Add Regular Trip' : 'Edit Regular Trip'}
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Lane Name</label>
-                        <input type="text" value={regularForm.lane} onChange={e => setRegularForm(f => ({ ...f, lane: e.target.value }))}
-                          placeholder="e.g. Patna DC-Sonho DC" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number</label>
-                        <input type="text" value={regularForm.vehicleNo} onChange={e => setRegularForm(f => ({ ...f, vehicleNo: e.target.value }))}
-                          placeholder="e.g. BR11GF7516" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
-                        <select value={regularForm.vehicleType} onChange={e => setRegularForm(f => ({ ...f, vehicleType: e.target.value }))}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
-                          {VEHICLE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">CPK Rate (₹/km)</label>
-                        <input type="number" value={regularForm.cpkRate} onChange={e => setRegularForm(f => ({ ...f, cpkRate: e.target.value }))}
-                          placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Allotted KMs (per trip)</label>
-                        <input type="number" value={regularForm.allottedKms} onChange={e => setRegularForm(f => ({ ...f, allottedKms: e.target.value }))}
-                          placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Working Days/Month</label>
-                        <input type="number" value={regularForm.workingDays} onChange={e => setRegularForm(f => ({ ...f, workingDays: e.target.value }))}
-                          placeholder="30" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <input type="date" value={regularForm.startDate} onChange={e => setRegularForm(f => ({ ...f, startDate: e.target.value }))}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                        <input type="date" value={regularForm.endDate} onChange={e => setRegularForm(f => ({ ...f, endDate: e.target.value }))}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                        <select value={regularForm.status} onChange={e => setRegularForm(f => ({ ...f, status: e.target.value }))}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
-                          <option value="active">Active</option>
-                          <option value="inactive">Inactive</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="flex gap-3 mt-4">
-                      <button onClick={handleSaveRegular} className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">Save</button>
-                      <button onClick={resetRegularForm} className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm">Cancel</button>
-                    </div>
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">
+                  {editingRegular && editingRegular !== 'new' ? 'Edit Regular Trip' : 'Add Regular Trip'}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Lane Name</label>
+                    <input type="text" value={regularForm.lane} onChange={e => setRegularForm(f => ({ ...f, lane: e.target.value }))}
+                      placeholder="e.g. Patna DC-Sonho DC" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
                   </div>
-                ) : (
-                  <button onClick={() => setEditingRegular('new')} className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">
-                    + Add Regular Trip
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number</label>
+                    <input type="text" value={regularForm.vehicleNo} onChange={e => setRegularForm(f => ({ ...f, vehicleNo: e.target.value }))}
+                      placeholder="e.g. BR11GF7516" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
+                    <select value={regularForm.vehicleType} onChange={e => setRegularForm(f => ({ ...f, vehicleType: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                      {VEHICLE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">CPK Rate (₹/km)</label>
+                    <input type="number" value={regularForm.cpkRate} onChange={e => setRegularForm(f => ({ ...f, cpkRate: e.target.value }))}
+                      placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Allotted KMs (per trip)</label>
+                    <input type="number" value={regularForm.allottedKms} onChange={e => setRegularForm(f => ({ ...f, allottedKms: e.target.value }))}
+                      placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Working Days/Month</label>
+                    <input type="number" value={regularForm.workingDays} onChange={e => setRegularForm(f => ({ ...f, workingDays: e.target.value }))}
+                      placeholder="30" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                    <input type="date" value={regularForm.startDate} onChange={e => setRegularForm(f => ({ ...f, startDate: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                    <input type="date" value={regularForm.endDate} onChange={e => setRegularForm(f => ({ ...f, endDate: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <select value={regularForm.status} onChange={e => setRegularForm(f => ({ ...f, status: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-4">
+                  <button onClick={handleSaveRegular} className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">
+                    {editingRegular && editingRegular !== 'new' ? 'Update' : 'Save'}
                   </button>
-                )}
+                  {editingRegular && editingRegular !== 'new' && (
+                    <button onClick={resetRegularForm} className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm">Cancel Edit</button>
+                  )}
+                </div>
               </div>
             )}
           </>
