@@ -422,7 +422,6 @@ export default function MISPage() {
       const freshRegularSnap = await getDocs(collection(db, 'regular_trips'))
       const freshRegularTrips = []
       freshRegularSnap.forEach(d => freshRegularTrips.push({ id: d.id, ...d.data() }))
-      setRegularTrips(freshRegularTrips)
 
       // Run reconciliation
       const tripsCopy = monthTrips.map(t => ({ ...t }))
