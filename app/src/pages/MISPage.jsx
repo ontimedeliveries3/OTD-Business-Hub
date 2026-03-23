@@ -71,7 +71,6 @@ export default function MISPage() {
   const [activeTab, setActiveTab] = useState('import') // import | reconciliation | disputes | regular_trips
 
   // Regular Trips (lane contracts)
-  const [regularTrips, setRegularTrips] = useState([])
   const [selectedMonth, setSelectedMonth] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
 
   // Import state
@@ -135,7 +134,7 @@ export default function MISPage() {
       setMisTrips(tripsList)
       setOtdTrips(otdList)
       setBids(bidsList)
-      setRegularTrips(regularList)
+      // regularList loaded but only used on-demand in handleReconcile
     } catch (err) {
       console.error('Failed to load MIS data:', err)
       setError('Failed to load data: ' + err.message)
