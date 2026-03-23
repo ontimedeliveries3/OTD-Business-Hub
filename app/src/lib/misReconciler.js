@@ -257,8 +257,11 @@ export function buildRegularLaneSummary(misTrips, regularTripsSetup, month) {
 
     const expectedTrips = contract.workingDays || 30
     const actualTrips = matchedTrips.length
-    const expectedRevenue = expectedTrips * (contract.allottedKms || 0) * (contract.cpkRate || 0)
-    const actualRevenue = actualTrips * (contract.allottedKms || 0) * (contract.cpkRate || 0)
+    const perTripRevenue = contract.client === 'Meesho'
+      ? (contract.tripRate || 0)
+      : (contract.allottedKms || 0) * (contract.cpkRate || 0)
+    const expectedRevenue = expectedTrips * perTripRevenue
+    const actualRevenue = actualTrips * perTripRevenue
 
     const vehiclesInMis = [...new Set(matchedTrips.map(t => t.sfx_vehicleNo).filter(Boolean))]
     const vehicleMatch = vehiclesInMis.length === 0 || vehiclesInMis.includes(normalizeVehicleNo(contract.vehicleNo))

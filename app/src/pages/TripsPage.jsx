@@ -79,7 +79,7 @@ export default function TripsPage() {
   // Regular Trips (lane contracts)
   const [regularTrips, setRegularTrips] = useState([])
   const [editingRegular, setEditingRegular] = useState('new')
-  const [regularForm, setRegularForm] = useState({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
+  const [regularForm, setRegularForm] = useState({ client: 'Shadowfax', lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', tripRate: '', rfqId: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
   const [logSubTab, setLogSubTab] = useState('adhoc') // adhoc | regular
   const [viewSubTab, setViewSubTab] = useState('adhoc') // adhoc | regular
 
@@ -278,7 +278,7 @@ export default function TripsPage() {
   const VEHICLE_TYPES = ['Bolero', 'Tata Ace', 'Tata 407', '8 ft', '10 ft', '14 ft', '17 ft', '32 ft']
 
   const resetRegularForm = () => {
-    setRegularForm({ lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
+    setRegularForm({ client: 'Shadowfax', lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', tripRate: '', rfqId: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
     setEditingRegular('new')
   }
 
@@ -289,16 +289,18 @@ export default function TripsPage() {
     }
     try {
       const data = {
+        client: regularForm.client,
         lane: regularForm.lane.trim(),
         vehicleNo: regularForm.vehicleNo.trim().toUpperCase().replace(/\s+/g, ''),
         vehicleType: regularForm.vehicleType,
-        cpkRate: parseFloat(regularForm.cpkRate) || 0,
-        allottedKms: parseFloat(regularForm.allottedKms) || 0,
+        cpkRate: regularForm.client === 'Shadowfax' ? (parseFloat(regularForm.cpkRate) || 0) : null,
+        allottedKms: regularForm.client === 'Shadowfax' ? (parseFloat(regularForm.allottedKms) || 0) : null,
+        tripRate: regularForm.client === 'Meesho' ? (parseFloat(regularForm.tripRate) || 0) : null,
+        rfqId: regularForm.client === 'Meesho' ? (regularForm.rfqId?.trim() || '') : null,
         workingDays: parseInt(regularForm.workingDays) || 30,
         startDate: regularForm.startDate || null,
         endDate: regularForm.endDate || null,
         status: regularForm.status,
-        client: 'Shadowfax',
         updatedAt: serverTimestamp(),
       }
       if (editingRegular && editingRegular !== 'new') {
@@ -332,11 +334,14 @@ export default function TripsPage() {
   const handleEditRegular = (rt) => {
     setEditingRegular(rt)
     setRegularForm({
+      client: rt.client || 'Shadowfax',
       lane: rt.lane || '',
       vehicleNo: rt.vehicleNo || '',
       vehicleType: rt.vehicleType || 'Bolero',
       cpkRate: rt.cpkRate || '',
       allottedKms: rt.allottedKms || '',
+      tripRate: rt.tripRate || '',
+      rfqId: rt.rfqId || '',
       workingDays: rt.workingDays || '30',
       startDate: rt.startDate || '',
       endDate: rt.endDate || '',
@@ -513,9 +518,18 @@ export default function TripsPage() {
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Client</label>
+                    <select value={regularForm.client} onChange={e => setRegularForm(f => ({ ...f, client: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                      <option value="Shadowfax">Shadowfax</option>
+                      <option value="Meesho">Meesho</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Lane Name</label>
                     <input type="text" value={regularForm.lane} onChange={e => setRegularForm(f => ({ ...f, lane: e.target.value }))}
-                      placeholder="e.g. Patna DC-Sonho DC" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      placeholder={regularForm.client === 'Meesho' ? 'e.g. PTS→GYC→GYY→IWF→ILV→HZ9' : 'e.g. Patna DC-Sonho DC'}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number</label>
@@ -529,16 +543,34 @@ export default function TripsPage() {
                       {VEHICLE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">CPK Rate (₹/km)</label>
-                    <input type="number" value={regularForm.cpkRate} onChange={e => setRegularForm(f => ({ ...f, cpkRate: e.target.value }))}
-                      placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Allotted KMs (per trip)</label>
-                    <input type="number" value={regularForm.allottedKms} onChange={e => setRegularForm(f => ({ ...f, allottedKms: e.target.value }))}
-                      placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                  </div>
+                  {regularForm.client === 'Shadowfax' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">CPK Rate (₹/km)</label>
+                        <input type="number" value={regularForm.cpkRate} onChange={e => setRegularForm(f => ({ ...f, cpkRate: e.target.value }))}
+                          placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Allotted KMs (per trip)</label>
+                        <input type="number" value={regularForm.allottedKms} onChange={e => setRegularForm(f => ({ ...f, allottedKms: e.target.value }))}
+                          placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                    </>
+                  )}
+                  {regularForm.client === 'Meesho' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Trip Rate (₹/trip)</label>
+                        <input type="number" value={regularForm.tripRate} onChange={e => setRegularForm(f => ({ ...f, tripRate: e.target.value }))}
+                          placeholder="e.g. 3000" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">RFQ ID</label>
+                        <input type="text" value={regularForm.rfqId} onChange={e => setRegularForm(f => ({ ...f, rfqId: e.target.value }))}
+                          placeholder="e.g. PTS00053-18699-20260228-MAR" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                    </>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Working Days/Month</label>
                     <input type="number" value={regularForm.workingDays} onChange={e => setRegularForm(f => ({ ...f, workingDays: e.target.value }))}
@@ -741,11 +773,11 @@ export default function TripsPage() {
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 text-gray-500 text-left">
                         <tr>
+                          <th className="px-4 py-3 font-medium">Client</th>
                           <th className="px-4 py-3 font-medium">Lane</th>
                           <th className="px-4 py-3 font-medium">Vehicle</th>
                           <th className="px-4 py-3 font-medium">Type</th>
-                          <th className="px-4 py-3 font-medium text-right">CPK</th>
-                          <th className="px-4 py-3 font-medium text-right">KMs</th>
+                          <th className="px-4 py-3 font-medium text-right">Rate</th>
                           <th className="px-4 py-3 font-medium text-right">Days</th>
                           <th className="px-4 py-3 font-medium text-right">Est. Revenue</th>
                           <th className="px-4 py-3 font-medium">Period</th>
@@ -756,14 +788,18 @@ export default function TripsPage() {
                       <tbody className="divide-y divide-gray-200">
                         {regularTrips.map(rt => (
                           <tr key={rt.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-gray-500">{rt.client || 'Shadowfax'}</td>
                             <td className="px-4 py-3 font-medium text-gray-900">{rt.lane}</td>
                             <td className="px-4 py-3 text-gray-500">{rt.vehicleNo}</td>
                             <td className="px-4 py-3 text-gray-500">{rt.vehicleType}</td>
-                            <td className="px-4 py-3 text-right text-gray-900">{rt.cpkRate ? `₹${rt.cpkRate}` : '—'}</td>
-                            <td className="px-4 py-3 text-right text-gray-900">{rt.allottedKms || '—'}</td>
+                            <td className="px-4 py-3 text-right text-gray-900">
+                              {rt.client === 'Meesho' ? (rt.tripRate ? `₹${rt.tripRate}/trip` : '—') : (rt.cpkRate ? `₹${rt.cpkRate}/km × ${rt.allottedKms || 0}km` : '—')}
+                            </td>
                             <td className="px-4 py-3 text-right text-gray-900">{rt.workingDays || 30}</td>
                             <td className="px-4 py-3 text-right text-gray-900 font-medium">
-                              {rt.cpkRate && rt.allottedKms ? formatCurrency((rt.workingDays || 30) * rt.allottedKms * rt.cpkRate) : '—'}
+                              {rt.client === 'Meesho'
+                                ? (rt.tripRate ? formatCurrency((rt.workingDays || 30) * rt.tripRate) : '—')
+                                : (rt.cpkRate && rt.allottedKms ? formatCurrency((rt.workingDays || 30) * rt.allottedKms * rt.cpkRate) : '—')}
                             </td>
                             <td className="px-4 py-3 text-gray-500 text-xs">
                               {formatDate(rt.startDate)}{rt.endDate ? ` → ${formatDate(rt.endDate)}` : ' → present'}
