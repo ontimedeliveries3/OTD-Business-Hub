@@ -4,7 +4,6 @@ import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, serverTime
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
-import { generateInvoicePDF } from '../lib/pdfGenerator.jsx'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 const MONTHS = [
@@ -281,7 +280,8 @@ export default function CreateInvoicePage() {
         invoice_number: invoiceNumber.trim(),
       }
 
-      // 3. Generate PDF (with signature URL — CORS enabled on Storage bucket)
+      // 3. Generate PDF (dynamic import — loads PDF libraries on first generate)
+      const { generateInvoicePDF } = await import('../lib/pdfGenerator.jsx')
       const pdfBytes = await generateInvoicePDF(data, companyInfo, signatureUrl)
 
       // 4. Upload PDF to Firebase Storage
