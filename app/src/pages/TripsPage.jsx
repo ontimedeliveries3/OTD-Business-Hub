@@ -124,13 +124,16 @@ export default function TripsPage() {
         let vehiclesList = []
         vehiclesSnap.forEach(d => vehiclesList.push({ id: d.id, ...d.data() }))
 
-        // Seed any missing default vehicles
-        const existingIds = new Set(vehiclesList.map(v => v.id))
-        const missing = DEFAULT_VEHICLES.filter(v => !existingIds.has(v.number))
-        if (missing.length > 0) {
-          for (const v of missing) {
+        // Seed missing vehicles + correct outdated vehicle types
+        const existingMap = new Map(vehiclesList.map(v => [v.id, v]))
+        for (const v of DEFAULT_VEHICLES) {
+          const existing = existingMap.get(v.number)
+          if (!existing) {
             await setDoc(doc(db, 'vehicles', v.number), { number: v.number, size: v.size, active: true })
             vehiclesList.push({ id: v.number, number: v.number, size: v.size, active: true })
+          } else if (existing.size !== v.size) {
+            await setDoc(doc(db, 'vehicles', v.number), { size: v.size }, { merge: true })
+            existing.size = v.size
           }
         }
 
