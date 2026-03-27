@@ -546,15 +546,25 @@ export default function TripsPage() {
                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number</label>
-                    <input type="text" value={regularForm.vehicleNo} onChange={e => setRegularForm(f => ({ ...f, vehicleNo: e.target.value }))}
-                      placeholder="e.g. BR11GF7516" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
-                    <select value={regularForm.vehicleType} onChange={e => setRegularForm(f => ({ ...f, vehicleType: e.target.value }))}
+                    <select value={regularForm.vehicleType} onChange={e => {
+                      setRegularForm(f => ({ ...f, vehicleType: e.target.value, vehicleNo: '' }))
+                    }}
                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
                       {VEHICLE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number</label>
+                    <select value={regularForm.vehicleNo} onChange={e => {
+                      const selected = vehicles.find(v => v.number === e.target.value)
+                      setRegularForm(f => ({ ...f, vehicleNo: e.target.value, vehicleType: selected ? selected.size : f.vehicleType }))
+                    }}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                      <option value="">{regularForm.vehicleType ? `Select ${regularForm.vehicleType}...` : 'Select vehicle...'}</option>
+                      {vehicles.filter(v => !regularForm.vehicleType || v.size === regularForm.vehicleType).map(v => (
+                        <option key={v.number} value={v.number}>{v.number}</option>
+                      ))}
                     </select>
                   </div>
                   {regularForm.client === 'Shadowfax' && (
