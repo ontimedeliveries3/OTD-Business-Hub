@@ -19,7 +19,6 @@ export const SKIP_REASONS = [
 export const BID_STATUSES = [
   { value: 'won', label: 'Won' },
   { value: 'lost', label: 'Lost' },
-  { value: 'skipped', label: 'Skipped' },
 ]
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

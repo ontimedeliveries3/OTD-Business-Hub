@@ -80,7 +80,6 @@ export default function BidsPage() {
     const total = filteredBids.length
     const won = filteredBids.filter(b => b.status === 'won')
     const lost = filteredBids.filter(b => b.status === 'lost')
-    const skipped = filteredBids.filter(b => b.status === 'skipped')
     const winRate = total > 0 ? Math.round((won.length / (won.length + lost.length || 1)) * 100) : 0
 
     let weekRevenue = 0
@@ -111,7 +110,7 @@ export default function BidsPage() {
       count: d.count,
     })).sort((a, b) => b.count - a.count)
 
-    return { total, won: won.length, lost: lost.length, skipped: skipped.length, winRate, weekRevenue, monthRevenue, avgByOrigin }
+    return { total, won: won.length, lost: lost.length, winRate, weekRevenue, monthRevenue, avgByOrigin }
   }, [filteredBids])
 
   // ── Helpers ────────────────────────────────────────────────────────────
@@ -140,7 +139,6 @@ export default function BidsPage() {
     const classes = {
       won: 'bg-green-100 text-green-700',
       lost: 'bg-red-100 text-red-700',
-      skipped: 'bg-gray-100 text-gray-600',
     }
     return (
       <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${classes[status] || 'bg-gray-100 text-gray-600'}`}>
@@ -529,7 +527,6 @@ export default function BidsPage() {
                   <option value="all">All Statuses</option>
                   <option value="won">Won</option>
                   <option value="lost">Lost</option>
-                  <option value="skipped">Skipped</option>
                 </select>
                 <select
                   value={vehicleFilter}

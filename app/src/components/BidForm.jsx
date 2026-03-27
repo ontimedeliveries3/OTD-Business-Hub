@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { emptyBid, ORIGINS, VEHICLE_SIZES, SKIP_REASONS, BID_STATUSES } from '../lib/bids'
+import { emptyBid, ORIGINS, VEHICLE_SIZES, BID_STATUSES } from '../lib/bids'
 
 export default function BidForm({
   initialValues,
@@ -14,14 +14,8 @@ export default function BidForm({
 
     // When status changes, clear conditional fields
     if (field === 'status') {
-      if (value === 'skipped') {
-        updated.bidAmount = ''
+      if (value === 'lost') {
         updated.allocationPrice = ''
-      } else if (value === 'lost') {
-        updated.allocationPrice = ''
-        updated.skipReason = ''
-      } else if (value === 'won') {
-        updated.skipReason = ''
       }
     }
 
@@ -42,10 +36,6 @@ export default function BidForm({
     if (form.status === 'won' && (!form.allocationPrice || parseFloat(form.allocationPrice) <= 0)) {
       errs.allocationPrice = 'Required'
     }
-    if (form.status === 'skipped' && !form.skipReason) {
-      errs.skipReason = 'Required'
-    }
-
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -73,7 +63,6 @@ export default function BidForm({
         ? parseFloat(form.bidAmount) || 0 : null,
       allocationPrice: form.status === 'won'
         ? parseFloat(form.allocationPrice) || 0 : null,
-      skipReason: form.status === 'skipped' ? form.skipReason : null,
       requestDate: form.placementTime || new Date().toISOString().split('T')[0],
     }
 
@@ -263,22 +252,6 @@ export default function BidForm({
         )}
 
         {/* Conditional: Skip Reason (Skipped only) */}
-        {form.status === 'skipped' && (
-          <div>
-            <label className={labelClass}>Skip Reason</label>
-            <select
-              value={form.skipReason}
-              onChange={(e) => updateField('skipReason', e.target.value)}
-              className={fieldClass('skipReason')}
-            >
-              <option value="">Select reason...</option>
-              {SKIP_REASONS.map(r => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
         {/* Save button - sticky on mobile */}
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 sm:static sm:p-0 sm:bg-transparent sm:border-0 sm:pt-2 z-10">
           <button
