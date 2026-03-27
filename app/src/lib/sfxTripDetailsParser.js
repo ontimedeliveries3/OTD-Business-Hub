@@ -10,22 +10,14 @@ import * as XLSX from 'xlsx'
 const VEHICLE_TYPE_MAP = {
   'bolero': 'Bolero',
   'beloro': 'Bolero',
-  'tata ace': 'Tata Ace',
-  'tata_ace': 'Tata Ace',
+  'tata ace': 'Bolero',       // Map Tata Ace → Bolero (closest OTD equivalent)
+  'tata_ace': 'Bolero',
   'tata 407': 'Tata 407',
   'tata_407': 'Tata 407',
   '407': 'Tata 407',
-  '8 ft': '8 ft',
-  'ft8': '8 ft',
-  '10 ft': '10 ft',
-  'ft10': '10 ft',
-  '14 ft': '14 ft',
-  'ft14': '14 ft',
-  '17 ft': '17 ft',
-  'ft17': '17 ft',
-  '32 ft': '32 ft',
-  'ft 32': '32 ft',
-  'ft32': '32 ft',
+  'tata 710': 'Tata 710',
+  'tata_710': 'Tata 710',
+  '710': 'Tata 710',
 }
 
 export function normalizeVehicleType(raw) {

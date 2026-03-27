@@ -5,8 +5,7 @@ import * as XLSX from 'xlsx'
 export const ORIGINS = ['Patna DC', 'Ranchi DC', 'Purnia DC', 'Other']
 
 export const VEHICLE_SIZES = [
-  'Bolero', 'Tata Ace', 'Tata 407',
-  '8 ft', '10 ft', '14 ft', '17 ft',
+  'Bolero', 'Tata 407', 'Tata 710',
 ]
 
 export const SKIP_REASONS = [
@@ -64,13 +63,10 @@ function excelSerialToISO(serial) {
 function normalizeVehicleSize(raw) {
   if (!raw) return ''
   const lower = raw.trim().toLowerCase()
-  if (lower === 'bolero') return 'Bolero'
-  if (lower === 'tata ace' || lower === 'tata_ace') return 'Tata Ace'
-  if (lower === 'tata 407' || lower === 'tata_407') return 'Tata 407'
-  if (lower.includes('8')) return '8 ft'
-  if (lower.includes('10')) return '10 ft'
-  if (lower.includes('14')) return '14 ft'
-  if (lower.includes('17')) return '17 ft'
+  if (lower === 'bolero' || lower === 'belero') return 'Bolero'
+  if (lower === 'tata 407' || lower === 'tata_407' || lower === '407') return 'Tata 407'
+  if (lower === 'tata 710' || lower === 'tata_710' || lower === '710') return 'Tata 710'
+  if (lower === 'tata ace' || lower === 'tata_ace') return 'Bolero' // Map Tata Ace to Bolero (closest equivalent)
   return raw.trim()
 }
 

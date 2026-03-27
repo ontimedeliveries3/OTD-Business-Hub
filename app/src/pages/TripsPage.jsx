@@ -9,12 +9,23 @@ import TripEditModal from '../components/TripEditModal'
 // Default vehicles to seed if collection is empty
 const DEFAULT_VEHICLES = [
   { number: 'BR11GF3128', size: 'Tata 407' },
-  { number: 'BR11GF7560', size: 'Tata 407' },
-  { number: 'JH05DR0249', size: 'Tata 407' },
-  { number: 'JH05DT1651', size: 'Bolero' },
-  { number: 'JH05DV0634', size: 'Bolero' },
   { number: 'BR11GF4665', size: 'Bolero' },
-  { number: 'BR02GD1367', size: '8 FT' },
+  { number: 'BR11GF4663', size: 'Bolero' },
+  { number: 'JH05DV0634', size: 'Bolero' },
+  { number: 'JH05DR0249', size: 'Tata 407' },
+  { number: 'BR26GA7703', size: 'Bolero' },
+  { number: 'BR26GA9537', size: 'Bolero' },
+  { number: 'BR11GE4830', size: 'Bolero' },
+  { number: 'BR11GE4832', size: 'Bolero' },
+  { number: 'BR02GD1367', size: 'Bolero' },
+  { number: 'BR11GF7516', size: 'Tata 407' },
+  { number: 'BR11GF7518', size: 'Tata 407' },
+  { number: 'BR11GF7560', size: 'Tata 407' },
+  { number: 'BR11GF7561', size: 'Tata 407' },
+  { number: 'JH05DT1651', size: 'Bolero' },
+  { number: 'JH02BX3835', size: 'Tata 710' },
+  { number: 'JH02BX8410', size: 'Tata 710' },
+  { number: 'BR11GB5755', size: 'Bolero' },
 ]
 
 // Default locations per client (shared pool for origin & destination)
@@ -275,7 +286,7 @@ export default function TripsPage() {
   }
 
   // ── Regular Trips CRUD ─────────────────────────────────────────────────
-  const VEHICLE_TYPES = ['Bolero', 'Tata Ace', 'Tata 407', '8 ft', '10 ft', '14 ft', '17 ft', '32 ft']
+  const VEHICLE_TYPES = ['Bolero', 'Tata 407', 'Tata 710']
 
   const resetRegularForm = () => {
     setRegularForm({ client: 'Shadowfax', lane: '', vehicleNo: '', vehicleType: 'Bolero', cpkRate: '', allottedKms: '', tripRate: '', rfqId: '', workingDays: '30', startDate: '', endDate: '', status: 'active' })
