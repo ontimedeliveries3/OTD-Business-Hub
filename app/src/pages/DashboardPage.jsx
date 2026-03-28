@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebase/firestore'
+import { collection, query, where, getDocs, orderBy, limit, doc, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
 
@@ -22,28 +22,27 @@ export default function DashboardPage() {
 
         // Fetch invoices for this FY
         const invoicesRef = collection(db, 'invoices')
-        const q = query(invoicesRef, where('fiscal_year', '==', fy), orderBy('created_at', 'desc'))
-        const snapshot = await getDocs(q)
+        // Fetch recent 10 invoices (fast, limited query)
+        const recentQuery = query(invoicesRef, where('fiscal_year', '==', fy), orderBy('created_at', 'desc'), limit(10))
+        const recentSnap = await getDocs(recentQuery)
 
+        const recent = []
         let totalRevenue = 0
         let lastInvoice = '—'
-        const recent = []
 
-        snapshot.forEach((doc) => {
+        recentSnap.forEach((doc) => {
           const data = doc.data()
+          recent.push({ id: doc.id, ...data })
           if (data.status !== 'draft') {
             totalRevenue += data.grand_total || 0
             if (lastInvoice === '—' && data.invoice_number) {
               lastInvoice = data.invoice_number
             }
           }
-          if (recent.length < 10) {
-            recent.push({ id: doc.id, ...data })
-          }
         })
 
         setStats({
-          totalInvoices: snapshot.size,
+          totalInvoices: recentSnap.size,
           totalRevenue,
           lastInvoice,
           fiscalYear: fy,
