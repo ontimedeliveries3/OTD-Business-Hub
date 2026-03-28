@@ -45,6 +45,7 @@ export default function ExpensesPage() {
   const [category, setCategory] = useState('driver_advance')
   const [date, setDate] = useState(todayISO())
   const [amount, setAmount] = useState('')
+  const [vehicleType, setVehicleType] = useState('')
   const [vehicleNo, setVehicleNo] = useState('')
   const [driverName, setDriverName] = useState('')
   const [clientId, setClientId] = useState('')
@@ -80,6 +81,18 @@ export default function ExpensesPage() {
     }
     load()
   }, [])
+
+  // Vehicle types and filtered vehicles
+  const vehicleTypes = useMemo(() => {
+    const types = new Set()
+    vehicles.forEach(v => { if (v.type) types.add(v.type) })
+    return [...types].sort()
+  }, [vehicles])
+
+  const filteredVehicles = useMemo(() => {
+    if (!vehicleType) return vehicles
+    return vehicles.filter(v => v.type === vehicleType)
+  }, [vehicles, vehicleType])
 
   // Unique driver names from expenses for suggestions
   const driverSuggestions = useMemo(() => {
@@ -137,6 +150,7 @@ export default function ExpensesPage() {
   // Reset form
   const resetForm = () => {
     setAmount('')
+    setVehicleType('')
     setVehicleNo('')
     setNote('')
     // Keep category, date, driverName, clientId for rapid re-entry
@@ -196,7 +210,7 @@ export default function ExpensesPage() {
   }
 
   // Conditional fields based on category
-  const showVehicle = ['fuel', 'maintenance', 'tolls'].includes(category)
+  const showVehicle = ['fuel', 'maintenance', 'insurance'].includes(category)
   const showDriver = ['driver_salary', 'driver_advance'].includes(category)
   const showClient = category === 'penalty'
   const showNote = ['maintenance', 'insurance', 'penalty', 'misc'].includes(category)
@@ -275,18 +289,28 @@ export default function ExpensesPage() {
                     placeholder="0" className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
                 </div>
 
-                {/* Vehicle (conditional) */}
+                {/* Vehicle Type + Number (conditional) */}
                 {showVehicle && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
-                    <select value={vehicleNo} onChange={e => setVehicleNo(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
-                      <option value="">Select vehicle...</option>
-                      {vehicles.map(v => (
-                        <option key={v.id} value={v.number}>{v.number} ({v.type})</option>
-                      ))}
-                    </select>
-                  </div>
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
+                      <select value={vehicleType} onChange={e => { setVehicleType(e.target.value); setVehicleNo('') }}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                        <option value="">All types</option>
+                        {vehicleTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number</label>
+                      <select value={vehicleNo} onChange={e => setVehicleNo(e.target.value)}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                        <option value="">Select vehicle...</option>
+                        {filteredVehicles.map(v => (
+                          <option key={v.id} value={v.number}>{v.number}{!vehicleType ? ` (${v.type})` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
                 )}
 
                 {/* Driver (conditional) */}
