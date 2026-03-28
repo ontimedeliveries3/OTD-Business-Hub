@@ -114,7 +114,7 @@ function matchAdhocByDateVehicle(misTrips, otdTrips) {
     if (trip.tripType !== 'adhoc') continue
     if (!trip.sfx_date || !trip.sfx_vehicleNo) continue
 
-    const key = `${trip.sfx_date}|${trip.sfx_vehicleNo}`
+    const key = `${trip.sfx_date}|${normalizeVehicleNo(trip.sfx_vehicleNo)}`
     const candidates = tripsByDateVehicle[key]
     if (!candidates || candidates.length === 0) continue
 
