@@ -101,30 +101,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <div className="w-8 h-8 border-3 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
-            <p className="text-gray-500 text-sm">Loading dashboard...</p>
-          </div>
-        ) : (
-          <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sm:p-6">
-                <p className="text-sm text-gray-500">Invoices (FY {stats.fiscalYear})</p>
-                <p className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{stats.totalInvoices}</p>
-              </div>
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sm:p-6">
-                <p className="text-sm text-gray-500">Total Revenue</p>
-                <p className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{formatCurrency(stats.totalRevenue)}</p>
-              </div>
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sm:p-6">
-                <p className="text-sm text-gray-500">Last Invoice</p>
-                <p className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{stats.lastInvoice}</p>
-              </div>
-            </div>
-
-            {/* Quick Actions */}
+        {/* Quick Actions — render immediately, no data dependency */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
               <button
                 onClick={() => navigate('/bids')}
@@ -188,6 +165,22 @@ export default function DashboardPage() {
               </button>
             </div>
 
+            {/* Summary Cards — show skeleton while loading */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sm:p-6">
+                <p className="text-sm text-gray-500">Invoices (FY {stats.fiscalYear})</p>
+                <p className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{loading ? '...' : stats.totalInvoices}</p>
+              </div>
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sm:p-6">
+                <p className="text-sm text-gray-500">Total Revenue</p>
+                <p className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{loading ? '...' : formatCurrency(stats.totalRevenue)}</p>
+              </div>
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sm:p-6">
+                <p className="text-sm text-gray-500">Last Invoice</p>
+                <p className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{loading ? '...' : stats.lastInvoice}</p>
+              </div>
+            </div>
+
             {/* Recent Invoices */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex items-center justify-between">
@@ -199,7 +192,9 @@ export default function DashboardPage() {
                   View All &rarr;
                 </button>
               </div>
-              {recentInvoices.length === 0 ? (
+              {loading ? (
+                <div className="px-6 py-8 text-center text-gray-400 text-sm">Loading...</div>
+              ) : recentInvoices.length === 0 ? (
                 <div className="px-6 py-12 text-center text-gray-500">
                   <p>No invoices yet. Create your first invoice to get started.</p>
                 </div>
@@ -222,7 +217,7 @@ export default function DashboardPage() {
                           className="hover:bg-gray-50 cursor-pointer active:bg-gray-100"
                           onClick={() => {
                             if (inv.status === 'draft') {
-                              navigate(`/invoice/${inv.id}/edit`)
+                              navigate(`/invoices/${inv.id}/edit`)
                             } else if (inv.pdf_url) {
                               window.open(inv.pdf_url, '_blank')
                             }
@@ -254,8 +249,6 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
-          </>
-        )}
       </main>
     </div>
   )
