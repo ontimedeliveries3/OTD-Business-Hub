@@ -96,5 +96,13 @@ service cloud.firestore {
       allow update: if isAllowed();
       allow delete: if isAllowed();
     }
+
+    // Expenses collection (expense tracker)
+    match /expenses/{expenseId} {
+      allow read: if isAllowed();
+      allow create: if isAllowed();
+      allow update: if isAllowed();
+      allow delete: if isAllowed();
+    }
   }
 }

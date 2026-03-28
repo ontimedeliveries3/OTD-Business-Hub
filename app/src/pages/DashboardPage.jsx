@@ -126,7 +126,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
               <button
                 onClick={() => navigate('/bids')}
                 className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
@@ -160,6 +160,18 @@ export default function DashboardPage() {
                   <div>
                     <p className="font-medium text-gray-900 group-hover:text-blue-600">MIS Dashboard</p>
                     <p className="text-sm text-gray-500">Import & view trip data</p>
+                  </div>
+                </div>
+              </button>
+              <button
+                onClick={() => navigate('/expenses')}
+                className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">&#128176;</span>
+                  <div>
+                    <p className="font-medium text-gray-900 group-hover:text-blue-600">Expenses</p>
+                    <p className="text-sm text-gray-500">Track costs & settlements</p>
                   </div>
                 </div>
               </button>

@@ -13,6 +13,7 @@ const InvoiceRegisterPage = lazy(() => import('./pages/InvoiceRegisterPage'))
 const MISPage = lazy(() => import('./pages/MISPage'))
 const TripsPage = lazy(() => import('./pages/TripsPage'))
 const BidsPage = lazy(() => import('./pages/BidsPage'))
+const ExpensesPage = lazy(() => import('./pages/ExpensesPage'))
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -88,6 +89,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <BidsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/expenses"
+            element={
+              <ProtectedRoute>
+                <ExpensesPage />
               </ProtectedRoute>
             }
           />
