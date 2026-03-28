@@ -49,8 +49,29 @@ export function normalizeVehicleNo(raw) {
 export function parseExcelDate(val) {
   if (!val && val !== 0) return null
 
+  // Excel serial number (e.g., 45992 = Dec 1 2025)
+  if (typeof val === 'number' && val > 40000 && val < 60000) {
+    const utcDays = Math.floor(val - 25569)
+    const d = new Date(utcDays * 86400 * 1000)
+    const yyyy = d.getUTCFullYear()
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(d.getUTCDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+
   const s = String(val).trim()
   if (!s) return null
+
+  // Pure numeric string that looks like Excel serial
+  const numVal = Number(s)
+  if (!isNaN(numVal) && numVal > 40000 && numVal < 60000) {
+    const utcDays = Math.floor(numVal - 25569)
+    const d = new Date(utcDays * 86400 * 1000)
+    const yyyy = d.getUTCFullYear()
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(d.getUTCDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
 
   // ISO format: 2025-12-01 or 2025-12-01T00:00:00
   const isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)

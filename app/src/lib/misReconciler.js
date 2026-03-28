@@ -109,6 +109,10 @@ function matchAdhocByDateVehicle(misTrips, otdTrips) {
     tripsByDateVehicle[key].push(t)
   }
 
+  console.log('[MIS Recon] matchAdhocByDateVehicle:', otdTrips.length, 'OTD trips')
+  console.log('[MIS Recon] OTD trip keys (first 5):', Object.keys(tripsByDateVehicle).slice(0, 5))
+
+  let unmatchedCount = 0
   for (const trip of misTrips) {
     if (trip.matchStatus === 'matched' || trip.matchStatus === 'amount_mismatch') continue
     if (trip.tripType !== 'adhoc') continue
@@ -116,7 +120,13 @@ function matchAdhocByDateVehicle(misTrips, otdTrips) {
 
     const key = `${trip.sfx_date}|${normalizeVehicleNo(trip.sfx_vehicleNo)}`
     const candidates = tripsByDateVehicle[key]
-    if (!candidates || candidates.length === 0) continue
+    if (!candidates || candidates.length === 0) {
+      if (unmatchedCount < 3) {
+        console.log('[MIS Recon] No match for MIS key:', key, '| sfx_date:', trip.sfx_date, '| sfx_vehicleNo:', trip.sfx_vehicleNo)
+      }
+      unmatchedCount++
+      continue
+    }
 
     let bestMatch = null
     let bestScore = -1
