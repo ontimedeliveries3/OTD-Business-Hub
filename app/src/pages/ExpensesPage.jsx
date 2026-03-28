@@ -85,13 +85,13 @@ export default function ExpensesPage() {
   // Vehicle types and filtered vehicles
   const vehicleTypes = useMemo(() => {
     const types = new Set()
-    vehicles.forEach(v => { if (v.type) types.add(v.type) })
+    vehicles.forEach(v => { if (v.size) types.add(v.size) })
     return [...types].sort()
   }, [vehicles])
 
   const filteredVehicles = useMemo(() => {
     if (!vehicleType) return vehicles
-    return vehicles.filter(v => v.type === vehicleType)
+    return vehicles.filter(v => v.size === vehicleType)
   }, [vehicles, vehicleType])
 
   // Unique driver names from expenses for suggestions
@@ -105,7 +105,7 @@ export default function ExpensesPage() {
   const emiData = useMemo(() => {
     return vehicles
       .filter(v => v.emi && v.emi > 0)
-      .map(v => ({ vehicleNo: v.number, vehicleType: v.type, emi: v.emi, ownership: v.ownership }))
+      .map(v => ({ vehicleNo: v.number, vehicleType: v.size, emi: v.emi, ownership: v.ownership }))
   }, [vehicles])
 
   const totalEmi = useMemo(() => emiData.reduce((sum, v) => sum + v.emi, 0), [emiData])
@@ -306,7 +306,7 @@ export default function ExpensesPage() {
                         className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
                         <option value="">Select vehicle...</option>
                         {filteredVehicles.map(v => (
-                          <option key={v.id} value={v.number}>{v.number}{!vehicleType ? ` (${v.type})` : ''}</option>
+                          <option key={v.id} value={v.number}>{v.number}{!vehicleType ? ` (${v.size})` : ''}</option>
                         ))}
                       </select>
                     </div>
