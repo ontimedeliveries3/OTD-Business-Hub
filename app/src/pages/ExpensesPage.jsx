@@ -9,7 +9,7 @@ const CATEGORIES = [
   { value: 'driver_salary', label: 'Driver Salary' },
   { value: 'driver_advance', label: 'Driver Advance' },
   { value: 'maintenance', label: 'Vehicle Maintenance' },
-  { value: 'tolls', label: 'Tolls' },
+  { value: 'insurance', label: 'Insurance' },
   { value: 'penalty', label: 'Penalties/Deductions' },
   { value: 'misc', label: 'Misc' },
 ]
@@ -152,7 +152,7 @@ export default function ExpensesPage() {
       setError('Please enter a driver name.')
       return
     }
-    if ((category === 'fuel' || category === 'maintenance' || category === 'tolls') && !vehicleNo) {
+    if ((category === 'fuel' || category === 'maintenance' || category === 'insurance') && !vehicleNo) {
       setError('Please select a vehicle.')
       return
     }
@@ -199,7 +199,7 @@ export default function ExpensesPage() {
   const showVehicle = ['fuel', 'maintenance', 'tolls'].includes(category)
   const showDriver = ['driver_salary', 'driver_advance'].includes(category)
   const showClient = category === 'penalty'
-  const showNote = ['maintenance', 'penalty', 'misc'].includes(category)
+  const showNote = ['maintenance', 'insurance', 'penalty', 'misc'].includes(category)
 
   return (
     <div className="min-h-screen bg-gray-50">
