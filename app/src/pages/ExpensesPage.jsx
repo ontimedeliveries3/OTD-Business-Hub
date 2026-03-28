@@ -166,7 +166,7 @@ export default function ExpensesPage() {
       setError('Please enter a driver name.')
       return
     }
-    if ((category === 'fuel' || category === 'maintenance' || category === 'insurance') && !vehicleNo) {
+    if (['fuel', 'maintenance', 'insurance'].includes(category) && !vehicleNo) {
       setError('Please select a vehicle.')
       return
     }
@@ -210,7 +210,7 @@ export default function ExpensesPage() {
   }
 
   // Conditional fields based on category
-  const showVehicle = ['fuel', 'maintenance', 'insurance'].includes(category)
+  const showVehicle = ['fuel', 'maintenance', 'insurance', 'misc'].includes(category)
   const showDriver = ['driver_salary', 'driver_advance'].includes(category)
   const showClient = category === 'penalty'
   const showNote = ['maintenance', 'insurance', 'penalty', 'misc'].includes(category)
