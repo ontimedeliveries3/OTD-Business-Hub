@@ -8,24 +8,24 @@ import TripEditModal from '../components/TripEditModal'
 
 // Default vehicles to seed if collection is empty
 const DEFAULT_VEHICLES = [
-  { number: 'BR11GF3128', size: 'Tata 407' },
-  { number: 'BR11GF4665', size: 'Bolero' },
-  { number: 'BR11GF4663', size: 'Bolero' },
-  { number: 'JH05DV0634', size: 'Bolero' },
-  { number: 'JH05DR0249', size: 'Tata 407' },
-  { number: 'BR26GA7703', size: 'Bolero' },
-  { number: 'BR26GA9537', size: 'Bolero' },
-  { number: 'BR11GE4830', size: 'Bolero' },
-  { number: 'BR11GE4832', size: 'Bolero' },
-  { number: 'BR02GD1367', size: 'Bolero' },
-  { number: 'BR11GF7516', size: 'Tata 407' },
-  { number: 'BR11GF7518', size: 'Tata 407' },
-  { number: 'BR11GF7560', size: 'Tata 407' },
-  { number: 'BR11GF7561', size: 'Tata 407' },
-  { number: 'JH05DT1651', size: 'Bolero' },
-  { number: 'JH02BX3835', size: 'Tata 710' },
-  { number: 'JH02BX8410', size: 'Tata 710' },
-  { number: 'BR11GB5755', size: 'Bolero' },
+  { number: 'BR11GF3128', size: 'Tata 407', client: 'Shadowfax', ownership: 'Financed', emi: 25500 },
+  { number: 'BR11GF4665', size: 'Bolero', client: 'Shadowfax', ownership: 'Financed', emi: 20500 },
+  { number: 'BR11GF4663', size: 'Bolero', client: 'Meesho', ownership: 'Financed', emi: 20500 },
+  { number: 'JH05DV0634', size: 'Bolero', client: 'Shadowfax', ownership: 'Financed', emi: 20500 },
+  { number: 'JH05DR0249', size: 'Tata 407', client: 'Shadowfax', ownership: 'Financed', emi: 25500 },
+  { number: 'BR26GA7703', size: 'Bolero', client: 'Shadowfax', ownership: 'Owned', emi: 0 },
+  { number: 'BR26GA9537', size: 'Bolero', client: 'Shadowfax', ownership: 'Owned', emi: 0 },
+  { number: 'BR11GE4830', size: 'Bolero', client: 'Shadowfax', ownership: 'Financed', emi: 22500 },
+  { number: 'BR11GE4832', size: 'Bolero', client: 'Shadowfax', ownership: 'Financed', emi: 22500 },
+  { number: 'BR02GD1367', size: 'Bolero', client: 'Shadowfax', ownership: 'Financed', emi: 20500 },
+  { number: 'BR11GF7516', size: 'Tata 407', client: 'Shadowfax', ownership: 'Financed', emi: 27500 },
+  { number: 'BR11GF7518', size: 'Tata 407', client: 'Shadowfax', ownership: 'Financed', emi: 27500 },
+  { number: 'BR11GF7560', size: 'Tata 407', client: 'Shadowfax', ownership: 'Financed', emi: 27500 },
+  { number: 'BR11GF7561', size: 'Tata 407', client: 'Shadowfax', ownership: 'Financed', emi: 27500 },
+  { number: 'JH05DT1651', size: 'Bolero', client: 'Shadowfax', ownership: 'Financed', emi: 20500 },
+  { number: 'JH02BX3835', size: 'Tata 710', client: 'Shadowfax', ownership: 'Financed', emi: 36000 },
+  { number: 'JH02BX8410', size: 'Tata 710', client: 'Shadowfax', ownership: 'Financed', emi: 36000 },
+  { number: 'BR11GB5755', size: 'Bolero', client: 'Shadowfax', ownership: 'Rental', emi: 0 },
 ]
 
 // Default locations per client (shared pool for origin & destination)
@@ -127,13 +127,18 @@ export default function TripsPage() {
         // Seed missing vehicles + correct outdated vehicle types
         const existingMap = new Map(vehiclesList.map(v => [v.id, v]))
         for (const v of DEFAULT_VEHICLES) {
+          const vData = { number: v.number, size: v.size, client: v.client, ownership: v.ownership, emi: v.emi, active: true }
           const existing = existingMap.get(v.number)
           if (!existing) {
-            await setDoc(doc(db, 'vehicles', v.number), { number: v.number, size: v.size, active: true })
-            vehiclesList.push({ id: v.number, number: v.number, size: v.size, active: true })
-          } else if (existing.size !== v.size) {
-            await setDoc(doc(db, 'vehicles', v.number), { size: v.size }, { merge: true })
-            existing.size = v.size
+            await setDoc(doc(db, 'vehicles', v.number), vData)
+            vehiclesList.push({ id: v.number, ...vData })
+          } else {
+            // Update if any field differs
+            const needsUpdate = existing.size !== v.size || existing.emi !== v.emi || existing.ownership !== v.ownership || existing.client !== v.client
+            if (needsUpdate) {
+              await setDoc(doc(db, 'vehicles', v.number), vData, { merge: true })
+              Object.assign(existing, vData)
+            }
           }
         }
 
