@@ -23,14 +23,13 @@ export default function DashboardPage() {
         // Fetch invoices for this FY
         const invoicesRef = collection(db, 'invoices')
         const fyFilter = query(invoicesRef, where('fiscal_year', '==', fy))
-        const nonDraftFilter = query(invoicesRef, where('fiscal_year', '==', fy), where('status', '!=', 'draft'))
 
         // Run all queries in parallel: recent 10, total count, total revenue
         const recentQuery = query(invoicesRef, where('fiscal_year', '==', fy), orderBy('created_at', 'desc'), limit(10))
         const [recentSnap, countSnap, revenueSnap] = await Promise.all([
           getDocs(recentQuery),
           getCountFromServer(fyFilter),
-          getAggregateFromServer(nonDraftFilter, { totalRevenue: sum('grand_total') }),
+          getAggregateFromServer(fyFilter, { totalRevenue: sum('grand_total') }),
         ])
 
         const recent = []
