@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, query, where, getDocs, orderBy, limit, doc, getDoc } from 'firebase/firestore'
+import { collection, query, where, getDocs, getCountFromServer, getAggregateFromServer, sum, orderBy, limit, doc, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
 
@@ -22,28 +22,31 @@ export default function DashboardPage() {
 
         // Fetch invoices for this FY
         const invoicesRef = collection(db, 'invoices')
-        // Fetch recent 10 invoices (fast, limited query)
+        const fyFilter = query(invoicesRef, where('fiscal_year', '==', fy))
+        const nonDraftFilter = query(invoicesRef, where('fiscal_year', '==', fy), where('status', '!=', 'draft'))
+
+        // Run all queries in parallel: recent 10, total count, total revenue
         const recentQuery = query(invoicesRef, where('fiscal_year', '==', fy), orderBy('created_at', 'desc'), limit(10))
-        const recentSnap = await getDocs(recentQuery)
+        const [recentSnap, countSnap, revenueSnap] = await Promise.all([
+          getDocs(recentQuery),
+          getCountFromServer(fyFilter),
+          getAggregateFromServer(nonDraftFilter, { totalRevenue: sum('grand_total') }),
+        ])
 
         const recent = []
-        let totalRevenue = 0
         let lastInvoice = '—'
 
         recentSnap.forEach((doc) => {
           const data = doc.data()
           recent.push({ id: doc.id, ...data })
-          if (data.status !== 'draft') {
-            totalRevenue += data.grand_total || 0
-            if (lastInvoice === '—' && data.invoice_number) {
-              lastInvoice = data.invoice_number
-            }
+          if (lastInvoice === '—' && data.status !== 'draft' && data.invoice_number) {
+            lastInvoice = data.invoice_number
           }
         })
 
         setStats({
-          totalInvoices: recentSnap.size,
-          totalRevenue,
+          totalInvoices: countSnap.data().count,
+          totalRevenue: revenueSnap.data().totalRevenue || 0,
           lastInvoice,
           fiscalYear: fy,
         })
