@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, query, where, getDocs, getCountFromServer, getAggregateFromServer, sum, orderBy, limit, doc, getDoc } from 'firebase/firestore'
+import { collection, query, where, getDocs, orderBy, limit, doc, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
 
@@ -20,32 +20,29 @@ export default function DashboardPage() {
         const counters = countersSnap.data()
         const fy = counters?.current_fy || '25-26'
 
-        // Fetch invoices for this FY
+        // Fetch all FY invoices (lightweight — ~100 docs) for accurate count & revenue
         const invoicesRef = collection(db, 'invoices')
-        const fyFilter = query(invoicesRef, where('fiscal_year', '==', fy))
-
-        // Run all queries in parallel: recent 10, total count, total revenue
-        const recentQuery = query(invoicesRef, where('fiscal_year', '==', fy), orderBy('created_at', 'desc'), limit(10))
-        const [recentSnap, countSnap, revenueSnap] = await Promise.all([
-          getDocs(recentQuery),
-          getCountFromServer(fyFilter),
-          getAggregateFromServer(fyFilter, { totalRevenue: sum('grand_total') }),
-        ])
+        const fyQuery = query(invoicesRef, where('fiscal_year', '==', fy), orderBy('created_at', 'desc'))
+        const allSnap = await getDocs(fyQuery)
 
         const recent = []
+        let totalRevenue = 0
         let lastInvoice = '—'
 
-        recentSnap.forEach((doc) => {
+        allSnap.forEach((doc, i) => {
           const data = doc.data()
-          recent.push({ id: doc.id, ...data })
-          if (lastInvoice === '—' && data.status !== 'draft' && data.invoice_number) {
-            lastInvoice = data.invoice_number
+          if (recent.length < 10) recent.push({ id: doc.id, ...data })
+          if (data.status !== 'draft') {
+            totalRevenue += data.grand_total || 0
+            if (lastInvoice === '—' && data.invoice_number) {
+              lastInvoice = data.invoice_number
+            }
           }
         })
 
         setStats({
-          totalInvoices: countSnap.data().count,
-          totalRevenue: revenueSnap.data().totalRevenue || 0,
+          totalInvoices: allSnap.size,
+          totalRevenue,
           lastInvoice,
           fiscalYear: fy,
         })
