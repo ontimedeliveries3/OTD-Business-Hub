@@ -55,6 +55,7 @@ export default function ExpensesPage() {
   const now = new Date()
   const [viewMonth, setViewMonth] = useState(now.getMonth())
   const [viewYear, setViewYear] = useState(now.getFullYear())
+  const [showEmiBreakdown, setShowEmiBreakdown] = useState(false)
 
   // Load expenses and vehicles
   useEffect(() => {
@@ -122,8 +123,8 @@ export default function ExpensesPage() {
     monthlyExpenses.forEach(e => {
       totals[e.category] = (totals[e.category] || 0) + (e.amount || 0)
     })
-    const grandTotal = Object.values(totals).reduce((s, v) => s + v, 0) + totalEmi
-    return { ...totals, emi: totalEmi, total: grandTotal }
+    const grandTotal = Object.values(totals).reduce((s, v) => s + v, 0)
+    return { ...totals, total: grandTotal }
   }, [monthlyExpenses, totalEmi])
 
   // Driver settlement data
@@ -429,8 +430,8 @@ export default function ExpensesPage() {
                   <p className="text-lg font-bold text-gray-900 mt-1">{formatCurrency(monthlyTotals[c.value] || 0)}</p>
                 </div>
               ))}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
-                <p className="text-xs text-gray-500">EMI (auto)</p>
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 cursor-pointer hover:bg-blue-50 transition-colors" onClick={() => setShowEmiBreakdown(!showEmiBreakdown)}>
+                <p className="text-xs text-gray-500">EMI (auto) <span className="text-blue-600">▸ tap to view</span></p>
                 <p className="text-lg font-bold text-gray-900 mt-1">{formatCurrency(totalEmi)}</p>
               </div>
             </div>
@@ -441,40 +442,43 @@ export default function ExpensesPage() {
               <span className="text-xl font-bold text-blue-900">{formatCurrency(monthlyTotals.total)}</span>
             </div>
 
-            {/* EMI breakdown */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-700">EMI Breakdown (auto from vehicle data)</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-500 text-left">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">Vehicle</th>
-                      <th className="px-4 py-3 font-medium">Type</th>
-                      <th className="px-4 py-3 font-medium">Ownership</th>
-                      <th className="px-4 py-3 font-medium text-right">Monthly EMI</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {emiData.map(v => (
-                      <tr key={v.vehicleNo} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium text-gray-900">{v.vehicleNo}</td>
-                        <td className="px-4 py-3 text-gray-500">{v.vehicleType}</td>
-                        <td className="px-4 py-3 text-gray-500">{v.ownership}</td>
-                        <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(v.emi)}</td>
+            {/* EMI breakdown (shown on tap) */}
+            {showEmiBreakdown && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                  <h3 className="text-sm font-semibold text-gray-700">EMI Breakdown</h3>
+                  <button onClick={() => setShowEmiBreakdown(false)} className="text-xs text-gray-400 hover:text-gray-600">Close</button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-left">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Vehicle</th>
+                        <th className="px-4 py-3 font-medium">Type</th>
+                        <th className="px-4 py-3 font-medium">Ownership</th>
+                        <th className="px-4 py-3 font-medium text-right">Monthly EMI</th>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-gray-50 border-t-2 border-gray-300">
-                    <tr className="font-semibold text-gray-900">
-                      <td className="px-4 py-3" colSpan={3}>Total EMI</td>
-                      <td className="px-4 py-3 text-right">{formatCurrency(totalEmi)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {emiData.map(v => (
+                        <tr key={v.vehicleNo} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-medium text-gray-900">{v.vehicleNo}</td>
+                          <td className="px-4 py-3 text-gray-500">{v.vehicleType}</td>
+                          <td className="px-4 py-3 text-gray-500">{v.ownership}</td>
+                          <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(v.emi)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50 border-t-2 border-gray-300">
+                      <tr className="font-semibold text-gray-900">
+                        <td className="px-4 py-3" colSpan={3}>Total EMI</td>
+                        <td className="px-4 py-3 text-right">{formatCurrency(totalEmi)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Monthly expense list */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
