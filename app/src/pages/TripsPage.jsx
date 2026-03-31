@@ -3,8 +3,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
+import { NON_RUNNING_REASONS } from '../lib/trips'
 import TripForm from '../components/TripForm'
 import TripEditModal from '../components/TripEditModal'
+import VehicleConfigModal from '../components/VehicleConfigModal'
+import DateInput from '../components/DateInput'
 
 // Default vehicles to seed if collection is empty
 const DEFAULT_VEHICLES = [
@@ -87,6 +90,7 @@ export default function TripsPage() {
   const [dateTo, setDateTo] = useState('')
   const [clientFilter, setClientFilter] = useState('all')
   const [vehicleSearch, setVehicleSearch] = useState('')
+  const [tripTypeFilter, setTripTypeFilter] = useState('all')
   // Regular Trips (lane contracts)
   const [regularTrips, setRegularTrips] = useState([])
   const [editingRegular, setEditingRegular] = useState('new')
@@ -96,6 +100,7 @@ export default function TripsPage() {
 
   // Edit & Delete
   const [editingTrip, setEditingTrip] = useState(null)
+  const [showVehicleConfig, setShowVehicleConfig] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleting, setDeleting] = useState(false)
@@ -167,6 +172,7 @@ export default function TripsPage() {
         const regularList = []
         regularTripsSnap.forEach(d => regularList.push({ id: d.id, ...d.data() }))
         setRegularTrips(regularList)
+
       } catch (err) {
         console.error('Failed to load trips:', err)
         setError('Failed to load data: ' + err.message)
@@ -181,14 +187,20 @@ export default function TripsPage() {
 
   const suggestions = useMemo(() => {
     const driverMap = new Map()
+    const originMap = new Map()
+    const destMap = new Map()
 
     // trips are already sorted by date desc
     trips.forEach(t => {
       if (t.driver_name && !driverMap.has(t.driver_name)) driverMap.set(t.driver_name, true)
+      if (t.origin && !originMap.has(t.origin)) originMap.set(t.origin, true)
+      if (t.destination && !destMap.has(t.destination)) destMap.set(t.destination, true)
     })
 
     return {
       driver_name: [...driverMap.keys()],
+      origins: [...originMap.keys()],
+      destinations: [...destMap.keys()],
     }
   }, [trips])
 
@@ -203,9 +215,10 @@ export default function TripsPage() {
         const q = vehicleSearch.toUpperCase()
         if (!(t.vehicle_no || '').toUpperCase().includes(q)) return false
       }
+      if (tripTypeFilter !== 'all' && (t.trip_type || '') !== tripTypeFilter) return false
       return true
     })
-  }, [trips, dateFrom, dateTo, clientFilter, vehicleSearch])
+  }, [trips, dateFrom, dateTo, clientFilter, vehicleSearch, tripTypeFilter])
 
   const stats = useMemo(() => {
     let totalAmount = 0
@@ -368,6 +381,35 @@ export default function TripsPage() {
     })
   }
 
+  // ── Non-running day ────────────────────────────────────────────────────
+
+  const [showNrdForm, setShowNrdForm] = useState(false)
+  const [nrdForm, setNrdForm] = useState({ date: new Date().toISOString().split('T')[0], vehicle_no: '', reason: 'no_load', note: '' })
+  const [nrdSaving, setNrdSaving] = useState(false)
+
+  const handleSaveNrd = async () => {
+    if (!nrdForm.vehicle_no) return
+    setNrdSaving(true)
+    try {
+      const data = {
+        date: nrdForm.date,
+        vehicle_no: nrdForm.vehicle_no,
+        reason: nrdForm.reason,
+        note: nrdForm.note.trim(),
+        created_at: serverTimestamp(),
+        created_by: user.email,
+      }
+      await addDoc(collection(db, 'non_running_days'), data)
+      setNrdForm({ date: nrdForm.date, vehicle_no: '', reason: 'no_load', note: '' })
+      setShowNrdForm(false)
+    } catch (err) {
+      console.error('Failed to save non-running day:', err)
+      setError('Failed to save: ' + err.message)
+    } finally {
+      setNrdSaving(false)
+    }
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -386,6 +428,15 @@ export default function TripsPage() {
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-gray-900 text-white text-sm rounded-lg shadow-lg animate-fade-in">
           {toast}
         </div>
+      )}
+
+      {/* Vehicle Config Modal */}
+      {showVehicleConfig && (
+        <VehicleConfigModal
+          vehicles={vehicles}
+          onClose={() => setShowVehicleConfig(false)}
+          onSaved={(updated) => setVehicles(updated)}
+        />
       )}
 
       {/* Edit Modal */}
@@ -441,9 +492,18 @@ export default function TripsPage() {
             <button onClick={() => navigate('/')} className="text-gray-500 hover:text-gray-700">
               &larr; Dashboard
             </button>
-            <h1 className="text-xl font-bold text-gray-900">Trip Logger</h1>
+            <h1 className="text-xl font-bold text-gray-900">Trip Manager</h1>
           </div>
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowVehicleConfig(true)}
+              className="text-gray-400 hover:text-gray-700 transition-colors p-1"
+              title="Vehicle Config"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+              </svg>
+            </button>
             <span className="text-sm text-gray-500 hidden sm:inline">{user.email}</span>
             <button onClick={logout} className="text-sm text-red-600 hover:text-red-800 font-medium">
               Sign Out
@@ -470,7 +530,7 @@ export default function TripsPage() {
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Log Trip
+            Add Trip
           </button>
           <button
             onClick={() => setActiveTab('view')}
@@ -480,30 +540,23 @@ export default function TripsPage() {
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Trip Log ({trips.length})
+            Trip List ({trips.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('contracts')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'contracts'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Regular Contracts ({regularTrips.length})
           </button>
         </div>
 
         {/* ── LOG TAB ─────────────────────────────────────────────────── */}
         {activeTab === 'log' && (
           <>
-            {/* Sub-tabs: Adhoc | Regular */}
-            <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setLogSubTab('adhoc')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  logSubTab === 'adhoc' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >Adhoc</button>
-              <button
-                onClick={() => { setLogSubTab('regular'); if (!editingRegular) setEditingRegular('new') }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  logSubTab === 'regular' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >Regular ({regularTrips.length})</button>
-            </div>
-
-            {logSubTab === 'adhoc' && (
           <TripForm
             clients={clients}
             vehicles={vehicles}
@@ -528,12 +581,55 @@ export default function TripsPage() {
               sfec_request_id: bidPrefill.sfec_request_id,
             } : undefined}
           />
-            )}
 
-            {logSubTab === 'regular' && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+          {/* Log idle day */}
+          <div className="mt-4">
+            {!showNrdForm ? (
+              <button onClick={() => setShowNrdForm(true)}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                + Log idle day
+              </button>
+            ) : (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <p className="text-sm font-medium text-gray-700 mb-3">Log Idle Day</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <DateInput value={nrdForm.date} onChange={(v) => setNrdForm(f => ({ ...f, date: v }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  <select value={nrdForm.vehicle_no} onChange={(e) => setNrdForm(f => ({ ...f, vehicle_no: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">Vehicle...</option>
+                    {vehicles.map(v => <option key={v.number} value={v.number}>{v.number} ({v.size})</option>)}
+                  </select>
+                  <select value={nrdForm.reason} onChange={(e) => setNrdForm(f => ({ ...f, reason: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    {NON_RUNNING_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                  <input type="text" placeholder="Note (optional)" value={nrdForm.note}
+                    onChange={(e) => setNrdForm(f => ({ ...f, note: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={handleSaveNrd} disabled={!nrdForm.vehicle_no || nrdSaving}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                    {nrdSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button onClick={() => setShowNrdForm(false)}
+                    className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          </>
+        )}
+
+        {/* ── CONTRACTS TAB ─────────────────────────────────────────── */}
+        {activeTab === 'contracts' && (
+          <>
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-6">
                 <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">
-                  {editingRegular && editingRegular !== 'new' ? 'Edit Regular Trip' : 'Add Regular Trip'}
+                  {editingRegular && editingRegular !== 'new' ? 'Edit Contract' : 'Add Contract'}
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -607,12 +703,12 @@ export default function TripsPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                    <input type="date" value={regularForm.startDate} onChange={e => setRegularForm(f => ({ ...f, startDate: e.target.value }))}
+                    <DateInput value={regularForm.startDate} onChange={v => setRegularForm(f => ({ ...f, startDate: v }))}
                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                    <input type="date" value={regularForm.endDate} onChange={e => setRegularForm(f => ({ ...f, endDate: e.target.value }))}
+                    <DateInput value={regularForm.endDate} onChange={v => setRegularForm(f => ({ ...f, endDate: v }))}
                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div>
@@ -633,31 +729,65 @@ export default function TripsPage() {
                   )}
                 </div>
               </div>
-            )}
+
+            {/* Contracts List */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              {regularTrips.length === 0 ? (
+                <div className="px-6 py-8 text-center text-gray-500 text-sm">
+                  No contracts configured yet. Add one above.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-left">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Client</th>
+                        <th className="px-4 py-3 font-medium">Lane</th>
+                        <th className="px-4 py-3 font-medium">Vehicle</th>
+                        <th className="px-4 py-3 font-medium text-right">Rate</th>
+                        <th className="px-4 py-3 font-medium text-right">Est. Revenue</th>
+                        <th className="px-4 py-3 font-medium">Status</th>
+                        <th className="px-4 py-3 font-medium w-20"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {regularTrips.map(rt => (
+                        <tr key={rt.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-gray-500">{rt.client || 'Shadowfax'}</td>
+                          <td className="px-4 py-3 font-medium text-gray-900">{rt.lane}</td>
+                          <td className="px-4 py-3 text-gray-500">{rt.vehicleNo}</td>
+                          <td className="px-4 py-3 text-right text-gray-900">
+                            {rt.client === 'Meesho' ? (rt.tripRate ? `\u20B9${rt.tripRate}/trip` : '\u2014') : (rt.cpkRate ? `\u20B9${rt.cpkRate}/km \u00D7 ${rt.allottedKms || 0}km` : '\u2014')}
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-900 font-medium">
+                            {rt.client === 'Meesho'
+                              ? (rt.tripRate ? formatCurrency((rt.workingDays || 30) * rt.tripRate) : '\u2014')
+                              : (rt.cpkRate && rt.allottedKms ? formatCurrency((rt.workingDays || 30) * rt.allottedKms * rt.cpkRate) : '\u2014')}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                              rt.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                            }`}>{rt.status}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              <button onClick={() => { handleEditRegular(rt); }} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</button>
+                              <button onClick={() => handleDeleteRegular(rt.id)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </>
         )}
 
         {/* ── VIEW TAB ────────────────────────────────────────────────── */}
         {activeTab === 'view' && (
           <>
-            {/* Sub-tabs: Adhoc | Regular */}
-            <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setViewSubTab('adhoc')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  viewSubTab === 'adhoc' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >Adhoc ({trips.length})</button>
-              <button
-                onClick={() => setViewSubTab('regular')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  viewSubTab === 'regular' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >Regular ({regularTrips.length})</button>
-            </div>
-
-            {viewSubTab === 'adhoc' && (
-            <>
             {/* Summary Stats */}
             <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -676,19 +806,17 @@ export default function TripsPage() {
 
             {/* Filters */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                <input
-                  type="date"
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <DateInput
                   value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  placeholder="From"
+                  onChange={setDateFrom}
+                  placeholder="From (DD/MM/YYYY)"
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
-                <input
-                  type="date"
+                <DateInput
                   value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  placeholder="To"
+                  onChange={setDateTo}
+                  placeholder="To (DD/MM/YYYY)"
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 <select
@@ -700,6 +828,15 @@ export default function TripsPage() {
                   {clients.map(c => (
                     <option key={c.id} value={c.id}>{c.name || c.id}</option>
                   ))}
+                </select>
+                <select
+                  value={tripTypeFilter}
+                  onChange={(e) => setTripTypeFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="all">All Types</option>
+                  <option value="adhoc">Adhoc</option>
+                  <option value="regular">Regular</option>
                 </select>
                 <input
                   type="text"
@@ -721,7 +858,7 @@ export default function TripsPage() {
               {filteredTrips.length === 0 ? (
                 <div className="px-6 py-12 text-center text-gray-500">
                   {trips.length === 0
-                    ? 'No trips logged yet. Switch to the "Log Trip" tab to get started.'
+                    ? 'No trips logged yet. Use the "Add Trip" tab to get started.'
                     : 'No trips match your filters.'
                   }
                 </div>
@@ -788,72 +925,9 @@ export default function TripsPage() {
                 </div>
               )}
             </div>
-            </>
-            )}
-
-            {viewSubTab === 'regular' && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                {regularTrips.length === 0 ? (
-                  <div className="px-6 py-8 text-center text-gray-500 text-sm">
-                    No regular lanes configured. Go to Log Trip → Regular to add one.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50 text-gray-500 text-left">
-                        <tr>
-                          <th className="px-4 py-3 font-medium">Client</th>
-                          <th className="px-4 py-3 font-medium">Lane</th>
-                          <th className="px-4 py-3 font-medium">Vehicle</th>
-                          <th className="px-4 py-3 font-medium">Type</th>
-                          <th className="px-4 py-3 font-medium text-right">Rate</th>
-                          <th className="px-4 py-3 font-medium text-right">Days</th>
-                          <th className="px-4 py-3 font-medium text-right">Est. Revenue</th>
-                          <th className="px-4 py-3 font-medium">Period</th>
-                          <th className="px-4 py-3 font-medium">Status</th>
-                          <th className="px-4 py-3 font-medium w-20">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {regularTrips.map(rt => (
-                          <tr key={rt.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-gray-500">{rt.client || 'Shadowfax'}</td>
-                            <td className="px-4 py-3 font-medium text-gray-900">{rt.lane}</td>
-                            <td className="px-4 py-3 text-gray-500">{rt.vehicleNo}</td>
-                            <td className="px-4 py-3 text-gray-500">{rt.vehicleType}</td>
-                            <td className="px-4 py-3 text-right text-gray-900">
-                              {rt.client === 'Meesho' ? (rt.tripRate ? `₹${rt.tripRate}/trip` : '—') : (rt.cpkRate ? `₹${rt.cpkRate}/km × ${rt.allottedKms || 0}km` : '—')}
-                            </td>
-                            <td className="px-4 py-3 text-right text-gray-900">{rt.workingDays || 30}</td>
-                            <td className="px-4 py-3 text-right text-gray-900 font-medium">
-                              {rt.client === 'Meesho'
-                                ? (rt.tripRate ? formatCurrency((rt.workingDays || 30) * rt.tripRate) : '—')
-                                : (rt.cpkRate && rt.allottedKms ? formatCurrency((rt.workingDays || 30) * rt.allottedKms * rt.cpkRate) : '—')}
-                            </td>
-                            <td className="px-4 py-3 text-gray-500 text-xs">
-                              {formatDate(rt.startDate)}{rt.endDate ? ` → ${formatDate(rt.endDate)}` : ' → present'}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                                rt.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                              }`}>{rt.status}</span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex gap-2">
-                                <button onClick={() => { handleEditRegular(rt); setActiveTab('log'); setLogSubTab('regular') }} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</button>
-                                <button onClick={() => handleDeleteRegular(rt.id)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
           </>
         )}
+
       </main>
     </div>
   )

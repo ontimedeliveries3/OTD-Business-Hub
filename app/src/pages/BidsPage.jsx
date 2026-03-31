@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore'
+import { collection, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
-import { parseAllocationExcel, ORIGINS, VEHICLE_SIZES } from '../lib/bids'
-import BidForm from '../components/BidForm'
+import { parseClipboardBids, ORIGINS, VEHICLE_SIZES } from '../lib/bids'
 import BidEditModal from '../components/BidEditModal'
+import DateInput from '../components/DateInput'
 
 export default function BidsPage() {
   const { user, logout } = useAuth()
@@ -17,7 +17,7 @@ export default function BidsPage() {
   const [error, setError] = useState(null)
 
   // Tabs
-  const [activeTab, setActiveTab] = useState('log')
+  const [activeTab, setActiveTab] = useState('history')
 
   // Toast
   const [toast, setToast] = useState(null)
@@ -36,9 +36,10 @@ export default function BidsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
-  // Import
+  // Paste import
+  const [pasteText, setPasteText] = useState('')
+  const [parsedBids, setParsedBids] = useState(null) // null = not parsed yet, [] = parsed empty
   const [importing, setImporting] = useState(false)
-  const fileInputRef = useRef(null)
 
   // ── Load data ──────────────────────────────────────────────────────────
 
@@ -78,9 +79,6 @@ export default function BidsPage() {
 
   const stats = useMemo(() => {
     const total = filteredBids.length
-    const won = filteredBids.filter(b => b.status === 'won')
-    const lost = filteredBids.filter(b => b.status === 'lost')
-    const winRate = total > 0 ? Math.round((won.length / (won.length + lost.length || 1)) * 100) : 0
 
     let weekRevenue = 0
     let monthRevenue = 0
@@ -90,15 +88,15 @@ export default function BidsPage() {
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
     const weekAgoStr = weekAgo.toISOString().split('T')[0]
 
-    won.forEach(b => {
+    filteredBids.forEach(b => {
       const price = b.allocationPrice || 0
       if (b.requestDate >= weekAgoStr) weekRevenue += price
       if (b.requestDate >= monthStart) monthRevenue += price
     })
 
-    // Average winning price by origin
+    // Average price by origin
     const originAvg = {}
-    won.forEach(b => {
+    filteredBids.forEach(b => {
       const o = b.origin || 'Unknown'
       if (!originAvg[o]) originAvg[o] = { total: 0, count: 0 }
       originAvg[o].total += b.allocationPrice || 0
@@ -110,7 +108,7 @@ export default function BidsPage() {
       count: d.count,
     })).sort((a, b) => b.count - a.count)
 
-    return { total, won: won.length, lost: lost.length, winRate, weekRevenue, monthRevenue, avgByOrigin }
+    return { total, weekRevenue, monthRevenue, avgByOrigin }
   }, [filteredBids])
 
   // ── Helpers ────────────────────────────────────────────────────────────
@@ -135,51 +133,62 @@ export default function BidsPage() {
     toastTimeoutRef.current = setTimeout(() => setToast(null), action ? 5000 : 2500)
   }
 
-  const statusBadge = (status) => {
-    const classes = {
-      won: 'bg-green-100 text-green-700',
-      lost: 'bg-red-100 text-red-700',
+
+  // ── Paste parse ────────────────────────────────────────────────────────
+
+  const handleParse = () => {
+    setError(null)
+    try {
+      const parsed = parseClipboardBids(pasteText)
+      if (parsed.length === 0) {
+        setError('No bids found. Copy the table from Shadowfax freight portal and paste here.')
+        return
+      }
+      // Filter out duplicates
+      const existingIds = new Set(bids.map(b => b.requestId))
+      const newOnly = parsed.filter(b => !existingIds.has(b.requestId))
+      setParsedBids({ all: parsed, new: newOnly })
+    } catch (err) {
+      setError('Failed to parse: ' + err.message)
     }
-    return (
-      <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${classes[status] || 'bg-gray-100 text-gray-600'}`}>
-        {status ? status.charAt(0).toUpperCase() + status.slice(1) : '\u2014'}
-      </span>
-    )
   }
 
-  // ── Save ───────────────────────────────────────────────────────────────
-
-  const handleSave = async (bidData) => {
+  const handleImportParsed = async () => {
+    if (!parsedBids?.new.length) return
+    setImporting(true)
+    setError(null)
     try {
-      setError(null)
-      const docRef = await addDoc(collection(db, 'bids'), {
-        ...bidData,
-        created_at: serverTimestamp(),
-        created_by: user.email,
-      })
-      const newBid = { id: docRef.id, ...bidData, created_at: new Date() }
-      setBids(prev => [newBid, ...prev])
-
-      if (bidData.status === 'won') {
-        showToast('Bid saved! Won ' + formatCurrency(bidData.allocationPrice), {
-          label: 'Create trip \u2192',
-          onClick: () => {
-            const params = new URLSearchParams({
-              from_bid: '1',
-              origin: bidData.origin,
-              destination: bidData.destination || bidData.touchPoints?.[0] || '',
-              vehicle_size: bidData.vehicleSize,
-              amount: String(bidData.allocationPrice || ''),
-            })
-            navigate('/trips?' + params.toString())
-          },
+      const newBids = parsedBids.new
+      const newDocs = []
+      for (let i = 0; i < newBids.length; i += 450) {
+        const chunk = newBids.slice(i, i + 450)
+        const batch = writeBatch(db)
+        const refs = []
+        for (const bid of chunk) {
+          const ref = doc(collection(db, 'bids'))
+          batch.set(ref, {
+            ...bid,
+            created_at: serverTimestamp(),
+            created_by: user.email,
+            imported: true,
+          })
+          refs.push({ ref, bid })
+        }
+        await batch.commit()
+        refs.forEach(({ ref, bid }) => {
+          newDocs.push({ id: ref.id, ...bid, created_at: new Date(), imported: true })
         })
-      } else {
-        showToast('Bid saved!')
       }
+      setBids(prev => [...newDocs, ...prev].sort((a, b) => (b.requestDate || '').localeCompare(a.requestDate || '')))
+      showToast(`Imported ${newDocs.length} bids!`)
+      setPasteText('')
+      setParsedBids(null)
+      setActiveTab('history')
     } catch (err) {
-      console.error('Failed to save bid:', err)
-      setError('Failed to save bid: ' + err.message)
+      console.error('Import failed:', err)
+      setError('Import failed: ' + err.message)
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -243,61 +252,6 @@ export default function BidsPage() {
     }
   }
 
-  // ── Import Excel ───────────────────────────────────────────────────────
-
-  const handleImport = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setImporting(true)
-    setError(null)
-
-    try {
-      const parsed = await parseAllocationExcel(file)
-
-      // Check for duplicates by requestId
-      const existingIds = new Set(bids.map(b => b.requestId))
-      const newBids = parsed.filter(b => !existingIds.has(b.requestId))
-
-      if (newBids.length === 0) {
-        showToast('No new bids to import — all already exist.')
-        setImporting(false)
-        return
-      }
-
-      // Batch write to Firestore (max 500 per batch)
-      const newDocs = []
-      for (let i = 0; i < newBids.length; i += 450) {
-        const chunk = newBids.slice(i, i + 450)
-        const batch = writeBatch(db)
-        const refs = []
-        for (const bid of chunk) {
-          const ref = doc(collection(db, 'bids'))
-          batch.set(ref, {
-            ...bid,
-            created_at: serverTimestamp(),
-            created_by: user.email,
-            imported: true,
-          })
-          refs.push({ ref, bid })
-        }
-        await batch.commit()
-        refs.forEach(({ ref, bid }) => {
-          newDocs.push({ id: ref.id, ...bid, created_at: new Date(), imported: true })
-        })
-      }
-
-      setBids(prev => [...newDocs, ...prev].sort((a, b) => (b.requestDate || '').localeCompare(a.requestDate || '')))
-      showToast(`Imported ${newDocs.length} bids!`)
-      setActiveTab('history')
-    } catch (err) {
-      console.error('Import failed:', err)
-      setError('Import failed: ' + err.message)
-    } finally {
-      setImporting(false)
-      // Reset file input
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -346,7 +300,7 @@ export default function BidsPage() {
               Delete bid <span className="font-medium">{deleteConfirm.requestId}</span>?
             </p>
             <p className="text-sm text-gray-600 mb-1">
-              {deleteConfirm.origin} &middot; {deleteConfirm.vehicleSize} &middot; {statusBadge(deleteConfirm.status)}
+              {deleteConfirm.origin} &middot; {deleteConfirm.vehicleSize}
             </p>
             <p className="text-xs text-red-500 mb-4">This action cannot be undone.</p>
             <div className="flex gap-3">
@@ -427,14 +381,14 @@ export default function BidsPage() {
         {/* Tab Bar */}
         <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
           <button
-            onClick={() => setActiveTab('log')}
+            onClick={() => setActiveTab('paste')}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'log'
+              activeTab === 'paste'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Log Bid
+            Paste Bids
           </button>
           <button
             onClick={() => setActiveTab('history')}
@@ -448,25 +402,111 @@ export default function BidsPage() {
           </button>
         </div>
 
-        {/* ── LOG TAB ─────────────────────────────────────────────────── */}
-        {activeTab === 'log' && (
-          <BidForm onSave={handleSave} autoResetOnSave />
+        {/* ── PASTE TAB ──────────────────────────────────────────────── */}
+        {activeTab === 'paste' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <p className="text-sm text-gray-600 mb-3">
+                Copy the table from Shadowfax freight portal and paste below.
+              </p>
+              <textarea
+                value={pasteText}
+                onChange={(e) => { setPasteText(e.target.value); setParsedBids(null) }}
+                placeholder="Select rows in Shadowfax portal → Copy (Ctrl+C) → Paste here (Ctrl+V)"
+                rows={6}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
+              />
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  onClick={handleParse}
+                  disabled={!pasteText.trim()}
+                  className="px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  Preview
+                </button>
+                {parsedBids && (
+                  <button
+                    onClick={() => { setPasteText(''); setParsedBids(null) }}
+                    className="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Preview parsed bids */}
+            {parsedBids && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Parsed {parsedBids.all.length} bid{parsedBids.all.length !== 1 ? 's' : ''}
+                    </p>
+                    {parsedBids.all.length !== parsedBids.new.length && (
+                      <p className="text-xs text-amber-600 mt-0.5">
+                        {parsedBids.all.length - parsedBids.new.length} already exist — {parsedBids.new.length} new to import
+                      </p>
+                    )}
+                  </div>
+                  {parsedBids.new.length > 0 && (
+                    <button
+                      onClick={handleImportParsed}
+                      disabled={importing}
+                      className="px-5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+                    >
+                      {importing ? 'Importing...' : `Import ${parsedBids.new.length} Bids`}
+                    </button>
+                  )}
+                </div>
+
+                {parsedBids.new.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 text-center">All bids already exist in the system.</p>
+                ) : (
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-gray-500 text-left">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Request ID</th>
+                          <th className="px-3 py-2 font-medium">Origin</th>
+                          <th className="px-3 py-2 font-medium hidden sm:table-cell">Destination</th>
+                          <th className="px-3 py-2 font-medium hidden sm:table-cell">Touch Points</th>
+                          <th className="px-3 py-2 font-medium">Vehicle</th>
+                          <th className="px-3 py-2 font-medium">Date</th>
+                          <th className="px-3 py-2 font-medium text-right">Price</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {parsedBids.new.map((b, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 font-medium text-gray-900 text-xs">{b.requestId}</td>
+                            <td className="px-3 py-2 text-gray-600">{b.origin}</td>
+                            <td className="px-3 py-2 text-gray-600 hidden sm:table-cell">{b.destination}</td>
+                            <td className="px-3 py-2 text-gray-500 hidden sm:table-cell text-xs">
+                              {b.touchPoints.join(', ') || '\u2014'}
+                            </td>
+                            <td className="px-3 py-2 text-gray-600">{b.vehicleSize}</td>
+                            <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDate(b.requestDate)}</td>
+                            <td className="px-3 py-2 text-gray-900 font-medium text-right">{formatCurrency(b.allocationPrice)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {/* ── HISTORY TAB ─────────────────────────────────────────────── */}
         {activeTab === 'history' && (
           <>
             {/* Summary Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-3 gap-4 mb-4">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                 <p className="text-sm text-gray-500">Total Bids</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
-              </div>
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                <p className="text-sm text-gray-500">Won</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">
-                  {stats.won} <span className="text-sm font-normal text-gray-400">({stats.winRate}%)</span>
-                </p>
               </div>
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                 <p className="text-sm text-gray-500">Week Revenue</p>
@@ -478,10 +518,10 @@ export default function BidsPage() {
               </div>
             </div>
 
-            {/* Avg Winning Price by Origin */}
+            {/* Avg Price by Origin */}
             {stats.avgByOrigin.length > 0 && (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
-                <p className="text-sm text-gray-500 mb-2">Avg Winning Price by Origin</p>
+                <p className="text-sm text-gray-500 mb-2">Avg Price by Origin</p>
                 <div className="flex flex-wrap gap-3">
                   {stats.avgByOrigin.map(a => (
                     <div key={a.origin} className="flex items-center gap-1.5">
@@ -497,16 +537,16 @@ export default function BidsPage() {
             {/* Filters + Import */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                <input
-                  type="date"
+                <DateInput
                   value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
+                  onChange={setDateFrom}
+                  placeholder="From (DD/MM/YYYY)"
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
-                <input
-                  type="date"
+                <DateInput
                   value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
+                  onChange={setDateTo}
+                  placeholder="To (DD/MM/YYYY)"
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 <select
@@ -520,15 +560,6 @@ export default function BidsPage() {
                   ))}
                 </select>
                 <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="won">Won</option>
-                  <option value="lost">Lost</option>
-                </select>
-                <select
                   value={vehicleFilter}
                   onChange={(e) => setVehicleFilter(e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -539,30 +570,16 @@ export default function BidsPage() {
                   ))}
                 </select>
               </div>
-              <div className="mt-3 flex items-center gap-3">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleImport}
-                  className="hidden"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={importing}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
-                >
-                  {importing ? 'Importing...' : 'Import Allocation History'}
-                </button>
-                {bids.length > 0 && (
+              {bids.length > 0 && (
+                <div className="mt-3">
                   <button
                     onClick={() => setClearAllConfirm(true)}
                     className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium transition-colors"
                   >
                     Clear All ({bids.length})
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Results count */}
@@ -575,7 +592,7 @@ export default function BidsPage() {
               {filteredBids.length === 0 ? (
                 <div className="px-6 py-12 text-center text-gray-500">
                   {bids.length === 0
-                    ? 'No bids logged yet. Switch to the "Log Bid" tab or import allocation history.'
+                    ? 'No bids yet. Use the "Paste Bids" tab to import from Shadowfax.'
                     : 'No bids match your filters.'
                   }
                 </div>
@@ -590,7 +607,6 @@ export default function BidsPage() {
                         <th className="px-4 py-3 font-medium hidden sm:table-cell">Destination</th>
                         <th className="px-4 py-3 font-medium hidden lg:table-cell">Touch Points</th>
                         <th className="px-4 py-3 font-medium hidden sm:table-cell">Vehicle</th>
-                        <th className="px-4 py-3 font-medium">Status</th>
                         <th className="px-4 py-3 font-medium text-right">Amount</th>
                         <th className="px-4 py-3 font-medium w-20"></th>
                       </tr>
@@ -611,14 +627,8 @@ export default function BidsPage() {
                             }
                           </td>
                           <td className="px-4 py-3 text-gray-500 hidden sm:table-cell whitespace-nowrap">{b.vehicleSize || '\u2014'}</td>
-                          <td className="px-4 py-3">{statusBadge(b.status)}</td>
                           <td className="px-4 py-3 text-gray-900 font-medium text-right whitespace-nowrap">
-                            {b.status === 'won'
-                              ? formatCurrency(b.allocationPrice || 0)
-                              : b.bidAmount
-                                ? formatCurrency(b.bidAmount)
-                                : '\u2014'
-                            }
+                            {formatCurrency(b.allocationPrice || b.bidAmount || 0)}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1">

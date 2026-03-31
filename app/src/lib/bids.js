@@ -79,6 +79,130 @@ function parsePrice(raw) {
   return parseInt(cleaned, 10) || 0
 }
 
+// ── Parse date string "29-Mar-2026" → "2026-03-29" ──────────────────────────
+
+const MONTHS = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
+                 Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' }
+
+function parseDateString(raw) {
+  if (!raw) return ''
+  const s = String(raw).trim()
+  // "29-Mar-2026" or "29-Mar-26"
+  const match = s.match(/^(\d{1,2})-(\w{3})-(\d{2,4})$/)
+  if (match) {
+    const [, day, mon, year] = match
+    const y = year.length === 2 ? '20' + year : year
+    return `${y}-${MONTHS[mon] || '01'}-${day.padStart(2, '0')}`
+  }
+  // Already ISO "2026-03-29"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  return ''
+}
+
+// ── Parse clipboard paste from Shadowfax freight portal ─────────────────────
+// When a touch-points cell has multiple lines, the browser splits the row:
+//   Line 1: SFEC...\tEcom\tOrigin\tDest\tTouchPoint1        (5 cols, no vehicle/date/price)
+//   Line 2: TouchPoint2                                       (1 col)
+//   Line 3: TouchPoint3\tBolero\t28-Mar-2026\tRs. 4900/-     (4 cols — last TP + remaining fields)
+// Complete rows (single touch point) paste as 7-8 cols on one line.
+
+const DATE_RE = /\d{1,2}-\w{3}-\d{2,4}/
+
+export function parseClipboardBids(text) {
+  if (!text || !text.trim()) return []
+
+  const lines = text.split('\n')
+  const grouped = []
+  let current = null
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    const cols = trimmed.split('\t')
+    const first = cols[0].trim()
+
+    // Skip header row
+    if (/request\s*id/i.test(first)) continue
+
+    // New SFEC row
+    if (/^SFEC/i.test(first)) {
+      if (current) grouped.push(current)
+      const touchPoint = (cols[4] || '').trim()
+
+      if (cols.length >= 7) {
+        // Complete row — all columns on one line
+        current = {
+          requestId: first.toUpperCase(),
+          origin: (cols[2] || '').trim(),
+          destination: (cols[3] || '').trim(),
+          touchPoints: touchPoint ? [touchPoint] : [],
+          vehicleSize: normalizeVehicleSize(cols[5] || ''),
+          requirementDate: parseDateString(cols[6] || ''),
+          price: parsePrice(cols[7] || ''),
+        }
+      } else {
+        // Partial row — touch points span multiple lines, vehicle/date/price come later
+        current = {
+          requestId: first.toUpperCase(),
+          origin: (cols[2] || '').trim(),
+          destination: (cols[3] || '').trim(),
+          touchPoints: touchPoint ? [touchPoint] : [],
+          vehicleSize: '',
+          requirementDate: '',
+          price: 0,
+          _incomplete: true,
+        }
+      }
+      continue
+    }
+
+    // Continuation line for current bid
+    if (!current) continue
+
+    // Check if this line contains a date — signals the completing line
+    // e.g. "Keshopur DC\tBolero\t28-Mar-2026\tRs. 4900/-"
+    const dateIdx = cols.findIndex(c => DATE_RE.test(c.trim()))
+
+    if (dateIdx >= 0 && current._incomplete) {
+      // Everything before (dateIdx - 1) are touch points, dateIdx-1 is vehicle, dateIdx is date, dateIdx+1 is price
+      for (let j = 0; j < dateIdx - 1; j++) {
+        const tp = cols[j].trim()
+        if (tp) current.touchPoints.push(tp)
+      }
+      current.vehicleSize = normalizeVehicleSize(cols[dateIdx - 1] || '')
+      current.requirementDate = parseDateString(cols[dateIdx])
+      current.price = parsePrice(cols[dateIdx + 1] || '')
+      current._incomplete = false
+    } else {
+      // Pure touch point continuation line
+      const tp = first
+      if (tp && !/^(ecom|adhoc|express)/i.test(tp)) {
+        current.touchPoints.push(tp)
+      }
+    }
+  }
+  if (current) grouped.push(current)
+
+  // Convert to bid objects
+  return grouped.map(g => ({
+    requestId: g.requestId,
+    client: 'Shadowfax',
+    origin: g.origin,
+    destination: g.destination,
+    touchPoints: g.touchPoints,
+    vehicleSize: g.vehicleSize,
+    tat: null,
+    placementTime: g.requirementDate,
+    bidDeadline: '',
+    status: 'won',
+    bidAmount: g.price,
+    allocationPrice: g.price,
+    skipReason: null,
+    requestDate: g.requirementDate,
+  }))
+}
+
 // ── Parse Shadowfax allocation Excel ─────────────────────────────────────────
 
 export function parseAllocationExcel(file) {

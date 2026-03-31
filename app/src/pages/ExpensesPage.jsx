@@ -3,10 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { collection, getDocs, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/useAuth'
+import DateInput from '../components/DateInput'
 
 const CATEGORIES = [
-  { value: 'fuel', label: 'Fuel/Diesel' },
-  { value: 'driver_salary', label: 'Driver Salary' },
   { value: 'driver_advance', label: 'Driver Advance' },
   { value: 'maintenance', label: 'Vehicle Maintenance' },
   { value: 'insurance', label: 'Insurance' },
@@ -33,7 +32,7 @@ export default function ExpensesPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  const [activeTab, setActiveTab] = useState('log') // log | monthly | settlement
+  const [activeTab, setActiveTab] = useState('log') // log | monthly | driver_advance
   const [expenses, setExpenses] = useState([])
   const [vehicles, setVehicles] = useState([])
   const [loading, setLoading] = useState(true)
@@ -128,7 +127,7 @@ export default function ExpensesPage() {
   }, [monthlyExpenses, totalEmi])
 
   // Driver settlement data
-  const driverSettlement = useMemo(() => {
+  const driverAdvanceSummary = useMemo(() => {
     const drivers = {}
     monthlyExpenses.forEach(e => {
       if (e.category === 'driver_salary' && e.driverName) {
@@ -248,7 +247,7 @@ export default function ExpensesPage() {
           {[
             { key: 'log', label: 'Log Expense' },
             { key: 'monthly', label: 'Monthly View' },
-            { key: 'settlement', label: 'Settlement' },
+            { key: 'driver_advance', label: 'Driver Advance' },
           ].map(tab => (
             <button
               key={tab.key}
@@ -279,7 +278,7 @@ export default function ExpensesPage() {
                 {/* Date */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                  <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                  <DateInput value={date} onChange={setDate}
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
                 </div>
 
@@ -518,11 +517,11 @@ export default function ExpensesPage() {
         )}
 
         {/* ── SETTLEMENT TAB ───────────────────────────── */}
-        {activeTab === 'settlement' && (
+        {activeTab === 'driver_advance' && (
           <div className="space-y-6">
             {/* Month selector */}
             <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-600 font-medium">Settlement for:</span>
+              <span className="text-sm text-gray-600 font-medium">Driver Advance for:</span>
               <select value={viewMonth} onChange={e => setViewMonth(parseInt(e.target.value))}
                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
                 {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
@@ -532,14 +531,14 @@ export default function ExpensesPage() {
                 className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
 
-            {driverSettlement.length === 0 ? (
+            {driverAdvanceSummary.length === 0 ? (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-6 py-12 text-center text-gray-500 text-sm">
                 No driver salary or advance data for {MONTHS[viewMonth]} {viewYear}. Log driver salaries and advances in the Log Expense tab first.
               </div>
             ) : (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-700">Driver Settlement — {MONTHS[viewMonth]} {viewYear}</h3>
+                  <h3 className="text-sm font-semibold text-gray-700">Driver Advance — {MONTHS[viewMonth]} {viewYear}</h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -552,7 +551,7 @@ export default function ExpensesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {driverSettlement.map(d => (
+                      {driverAdvanceSummary.map(d => (
                         <tr key={d.name} className="hover:bg-gray-50">
                           <td className="px-4 py-3 font-medium text-gray-900">{d.name}</td>
                           <td className="px-4 py-3 text-right text-gray-900">{formatCurrency(d.salary)}</td>
@@ -566,9 +565,9 @@ export default function ExpensesPage() {
                     <tfoot className="bg-gray-50 border-t-2 border-gray-300">
                       <tr className="font-semibold text-gray-900">
                         <td className="px-4 py-3">Total</td>
-                        <td className="px-4 py-3 text-right">{formatCurrency(driverSettlement.reduce((s, d) => s + d.salary, 0))}</td>
-                        <td className="px-4 py-3 text-right text-orange-600">- {formatCurrency(driverSettlement.reduce((s, d) => s + d.advances, 0))}</td>
-                        <td className="px-4 py-3 text-right font-bold text-green-700">{formatCurrency(driverSettlement.reduce((s, d) => s + d.netPayable, 0))}</td>
+                        <td className="px-4 py-3 text-right">{formatCurrency(driverAdvanceSummary.reduce((s, d) => s + d.salary, 0))}</td>
+                        <td className="px-4 py-3 text-right text-orange-600">- {formatCurrency(driverAdvanceSummary.reduce((s, d) => s + d.advances, 0))}</td>
+                        <td className="px-4 py-3 text-right font-bold text-green-700">{formatCurrency(driverAdvanceSummary.reduce((s, d) => s + d.netPayable, 0))}</td>
                       </tr>
                     </tfoot>
                   </table>

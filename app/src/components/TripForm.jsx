@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
-import { emptyTrip } from '../lib/trips'
+import { emptyTrip, TRIP_EXPENSE_CATEGORIES, computeExpensesTotal } from '../lib/trips'
+import DateInput from './DateInput'
 
 export default function TripForm({
   clients = [],
@@ -18,6 +19,10 @@ export default function TripForm({
   const [form, setForm] = useState(initialValues || emptyTrip())
   const [errors, setErrors] = useState({})
   const [showRemarks, setShowRemarks] = useState(!!(initialValues?.remarks))
+  const [showExpenses, setShowExpenses] = useState(() => {
+    if (!initialValues?.expenses) return false
+    return Object.values(initialValues.expenses).some(v => v && parseFloat(v) > 0)
+  })
 
   // Derive unique vehicle sizes from vehicles list
   const vehicleSizes = useMemo(() => {
@@ -32,25 +37,8 @@ export default function TripForm({
     return vehicles.filter(v => v.size === form.vehicle_size)
   }, [vehicles, form.vehicle_size])
 
-  // Filter locations by selected client (shared pool for origin & destination)
-  const clientLocations = useMemo(() => {
-    if (!form.client_id) return locations
-    return locations.filter(l => l.client_id === form.client_id)
-  }, [locations, form.client_id])
-
   const updateField = (field, value) => {
     let updated = { ...form, [field]: value }
-
-    // When client changes, clear origin/destination if they don't belong to the new client
-    if (field === 'client_id' && value) {
-      const newClientLocs = locations.filter(l => l.client_id === value).map(l => l.name)
-      if (form.origin && !newClientLocs.includes(form.origin)) {
-        updated.origin = ''
-      }
-      if (form.destination && !newClientLocs.includes(form.destination)) {
-        updated.destination = ''
-      }
-    }
 
     // When vehicle size changes, clear vehicle_no if it doesn't match
     if (field === 'vehicle_size' && form.vehicle_no) {
@@ -73,12 +61,15 @@ export default function TripForm({
     if (onChange) onChange(updated)
   }
 
+  const updateExpense = (key, value) => {
+    const updated = { ...form, expenses: { ...form.expenses, [key]: value } }
+    setForm(updated)
+    if (onChange) onChange(updated)
+  }
+
   const validate = () => {
     const errs = {}
-    if (!form.date) errs.date = 'Required'
-    if (!form.client_id) errs.client_id = 'Required'
     if (!form.vehicle_no.trim()) errs.vehicle_no = 'Required'
-    if (!form.amount || parseFloat(form.amount) <= 0) errs.amount = 'Required'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -87,18 +78,28 @@ export default function TripForm({
     if (!validate()) return
 
     const client = clients.find(c => c.id === form.client_id)
+    const expenses = {}
+    for (const cat of TRIP_EXPENSE_CATEGORIES) {
+      expenses[cat.value] = parseFloat(form.expenses?.[cat.value]) || 0
+    }
+    const expenses_total = computeExpensesTotal(expenses)
+
     const tripData = {
       date: form.date,
       vehicle_no: form.vehicle_no.trim().toUpperCase(),
       vehicle_size: form.vehicle_size,
       driver_name: form.driver_name.trim(),
-      origin: form.origin,
-      destination: form.destination,
+      origin: form.origin.trim(),
+      destination: form.destination.trim(),
       client_id: form.client_id,
-      client_name: client?.name || form.client_id,
+      client_name: client?.name || form.client_id || '',
       amount: parseFloat(form.amount) || 0,
+      trip_type: form.trip_type || '',
+      trip_id: (form.trip_id || '').trim(),
       remarks: form.remarks.trim(),
       sfec_request_id: form.sfec_request_id || '',
+      expenses,
+      expenses_total,
     }
 
     onSave?.(tripData)
@@ -112,6 +113,7 @@ export default function TripForm({
       })
       setErrors({})
       setShowRemarks(false)
+      setShowExpenses(false)
     }
   }
 
@@ -125,7 +127,7 @@ export default function TripForm({
   // Datalist IDs (unique per instance)
   const listId = (name) => `dl-${name}-${rowNumber || 'main'}`
 
-  // Render datalists (only driver now — origin/destination are selects)
+  // Render datalists for autocomplete
   const datalists = (
     <>
       {suggestions.driver_name?.length > 0 && (
@@ -133,23 +135,17 @@ export default function TripForm({
           {suggestions.driver_name.map(v => <option key={v} value={v} />)}
         </datalist>
       )}
+      {suggestions.origins?.length > 0 && (
+        <datalist id={listId('origin')}>
+          {suggestions.origins.map(v => <option key={v} value={v} />)}
+        </datalist>
+      )}
+      {suggestions.destinations?.length > 0 && (
+        <datalist id={listId('destination')}>
+          {suggestions.destinations.map(v => <option key={v} value={v} />)}
+        </datalist>
+      )}
     </>
-  )
-
-  // Origin/destination select helper
-  const locationSelect = (field, placeholder) => (
-    <select
-      value={form[field]}
-      onChange={(e) => updateField(field, e.target.value)}
-      className={fieldClass(field)}
-    >
-      <option value="">
-        {!form.client_id ? 'Select client first...' : placeholder}
-      </option>
-      {clientLocations.map(l => (
-        <option key={l.id || l.name} value={l.name}>{l.name}</option>
-      ))}
-    </select>
   )
 
   // Compact mode: card wrapper for bulk entry
@@ -173,10 +169,9 @@ export default function TripForm({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
             <label className={labelClass}>Date</label>
-            <input
-              type="date"
+            <DateInput
               value={form.date}
-              onChange={(e) => updateField('date', e.target.value)}
+              onChange={(v) => updateField('date', v)}
               className={fieldClass('date')}
             />
           </div>
@@ -221,11 +216,25 @@ export default function TripForm({
           </div>
           <div>
             <label className={labelClass}>Origin</label>
-            {locationSelect('origin', 'Origin...')}
+            <input
+              type="text"
+              placeholder="Origin..."
+              value={form.origin}
+              onChange={(e) => updateField('origin', e.target.value)}
+              list={listId('origin')}
+              className={fieldClass('origin')}
+            />
           </div>
           <div>
             <label className={labelClass}>Destination</label>
-            {locationSelect('destination', 'Destination...')}
+            <input
+              type="text"
+              placeholder="Destination..."
+              value={form.destination}
+              onChange={(e) => updateField('destination', e.target.value)}
+              list={listId('destination')}
+              className={fieldClass('destination')}
+            />
           </div>
           <div>
             <label className={labelClass}>Amount</label>
@@ -255,10 +264,9 @@ export default function TripForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Date</label>
-            <input
-              type="date"
+            <DateInput
               value={form.date}
-              onChange={(e) => updateField('date', e.target.value)}
+              onChange={(v) => updateField('date', v)}
               className={fieldClass('date')}
             />
           </div>
@@ -293,7 +301,7 @@ export default function TripForm({
             </select>
           </div>
           <div>
-            <label className={labelClass}>Vehicle Number</label>
+            <label className={labelClass}>Vehicle Number <span className="text-red-500">*</span></label>
             <select
               value={form.vehicle_no}
               onChange={(e) => updateField('vehicle_no', e.target.value)}
@@ -313,22 +321,36 @@ export default function TripForm({
           </div>
         </div>
 
-        {/* Row 3: Origin + Destination */}
+        {/* Row 3: Origin + Destination (text fields with autocomplete) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Origin</label>
-            {locationSelect('origin', 'Select origin...')}
+            <input
+              type="text"
+              placeholder="e.g. Patna DC"
+              value={form.origin}
+              onChange={(e) => updateField('origin', e.target.value)}
+              list={listId('origin')}
+              className={fieldClass('origin')}
+            />
           </div>
           <div>
             <label className={labelClass}>Destination</label>
-            {locationSelect('destination', 'Select destination...')}
+            <input
+              type="text"
+              placeholder="e.g. Ranchi DC"
+              value={form.destination}
+              onChange={(e) => updateField('destination', e.target.value)}
+              list={listId('destination')}
+              className={fieldClass('destination')}
+            />
           </div>
         </div>
 
         {/* Row 4: Driver + Trip Type */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className={labelClass}>Driver Name <span className="text-gray-400 font-normal">(optional)</span></label>
+            <label className={labelClass}>Driver Name</label>
             <input
               type="text"
               placeholder="e.g. Subhash"
@@ -338,12 +360,38 @@ export default function TripForm({
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
+          <div>
+            <label className={labelClass}>Trip Type</label>
+            <select
+              value={form.trip_type || ''}
+              onChange={(e) => updateField('trip_type', e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Select type...</option>
+              <option value="adhoc">Adhoc</option>
+              <option value="regular">Regular</option>
+            </select>
+          </div>
         </div>
 
-        {/* Row 5: Amount */}
+        {/* Row 5: Trip ID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className={labelClass}>Amount</label>
+            <label className={labelClass}>Trip ID</label>
+            <input
+              type="text"
+              placeholder="e.g. SFEC123 or any reference"
+              value={form.trip_id || ''}
+              onChange={(e) => updateField('trip_id', e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+        </div>
+
+        {/* Row 6: Amount + Add remarks/expenses toggles */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Amount (Revenue)</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">&#8377;</span>
               <input
@@ -356,14 +404,23 @@ export default function TripForm({
               />
             </div>
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end gap-3 pb-0.5">
             {!showRemarks && (
               <button
                 type="button"
                 onClick={() => setShowRemarks(true)}
                 className="text-sm text-blue-600 hover:text-blue-800 py-2.5"
               >
-                + Add remarks
+                + Remarks
+              </button>
+            )}
+            {!showExpenses && (
+              <button
+                type="button"
+                onClick={() => setShowExpenses(true)}
+                className="text-sm text-blue-600 hover:text-blue-800 py-2.5"
+              >
+                + Trip expenses
               </button>
             )}
           </div>
@@ -372,7 +429,7 @@ export default function TripForm({
         {/* Remarks (collapsed by default) */}
         {showRemarks && (
           <div>
-            <label className={labelClass}>Remarks <span className="text-gray-400 font-normal">(optional)</span></label>
+            <label className={labelClass}>Remarks</label>
             <input
               type="text"
               placeholder="e.g. late departure, short shipment"
@@ -380,6 +437,49 @@ export default function TripForm({
               onChange={(e) => updateField('remarks', e.target.value)}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
+          </div>
+        )}
+
+        {/* Trip Expenses (collapsed by default) */}
+        {showExpenses && (
+          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-medium text-gray-700">Trip Expenses</p>
+              <button
+                type="button"
+                onClick={() => setShowExpenses(false)}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                Hide
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {TRIP_EXPENSE_CATEGORIES.map(cat => (
+                <div key={cat.value}>
+                  <label className="block text-xs text-gray-500 mb-1">{cat.label}</label>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">&#8377;</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={form.expenses?.[cat.value] || ''}
+                      onChange={(e) => updateExpense(cat.value, e.target.value)}
+                      className="w-full pl-6 pr-2 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Expenses total */}
+            {(() => {
+              const total = computeExpensesTotal(form.expenses)
+              return total > 0 ? (
+                <p className="text-xs text-gray-500 mt-2 text-right">
+                  Total: <span className="font-medium text-gray-700">&#8377;{total.toLocaleString('en-IN')}</span>
+                </p>
+              ) : null
+            })()}
           </div>
         )}
 

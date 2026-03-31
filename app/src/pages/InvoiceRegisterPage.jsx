@@ -297,6 +297,22 @@ export default function InvoiceRegisterPage() {
           </div>
         )}
 
+        {/* Summary Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <p className="text-xs text-gray-500">Total Invoices (FY {fyFilter === 'all' ? 'All' : fyFilter})</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{filteredInvoices.length}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <p className="text-xs text-gray-500">Invoice Revenue</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(filteredTotals.grandTotal)}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <p className="text-xs text-gray-500">GST Collected</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(filteredTotals.gst)}</p>
+          </div>
+        </div>
+
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">

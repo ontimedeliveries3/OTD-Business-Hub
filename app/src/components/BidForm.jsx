@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { emptyBid, ORIGINS, VEHICLE_SIZES, BID_STATUSES } from '../lib/bids'
+import DateInput from './DateInput'
 
 export default function BidForm({
   initialValues,
@@ -178,10 +179,9 @@ export default function BidForm({
           </div>
           <div>
             <label className={labelClass}>Placement Date</label>
-            <input
-              type="date"
+            <DateInput
               value={form.placementTime}
-              onChange={(e) => updateField('placementTime', e.target.value)}
+              onChange={(v) => updateField('placementTime', v)}
               className={fieldClass('placementTime')}
             />
           </div>
